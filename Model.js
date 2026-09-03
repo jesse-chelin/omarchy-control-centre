@@ -927,6 +927,27 @@ function comboKey(combo) {
 // `hyprctl -j binds`, reduced to what a conflict check needs. A binding with
 // no key name is one Hyprland will not tell us the key for, which is how the
 // workspace switches appear; those are dropped rather than guessed at.
+// Text from outside, on its way to the screen. A track title is whatever the
+// playing application set, a sink name is a device's own description of
+// itself, and a binding description comes from someone else's config: none of
+// them is bounded, one line, or free of characters that a label has no use
+// for. Control characters, bidi overrides and zero-width marks are dropped
+// rather than escaped, runs of space collapse, and the result is cut to a
+// length. Eliding is how it is drawn; this is how long it is.
+var CONTROL_CHARS = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]/g
+
+function displayText(value, maxLength) {
+  var text = String(value === undefined || value === null ? "" : value)
+  text = text.replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim()
+  var limit = maxLength === undefined ? 200 : Number(maxLength)
+  if (!isFinite(limit) || limit < 0) limit = 200
+  return text.length > limit ? text.slice(0, limit) : text
+}
+
+// The producer caps the array at 600 (probe.sh), and this caps it again: the
+// two are deliberately the same number, and neither trusts the other.
+var MAX_BINDS = 600
+
 function parseBinds(raw) {
   var list = []
   var parsed
@@ -936,13 +957,13 @@ function parseBinds(raw) {
     return list
   }
   if (!Array.isArray(parsed)) return list
-  for (var i = 0; i < parsed.length && i < 2000; i++) {
+  for (var i = 0; i < parsed.length && i < MAX_BINDS; i++) {
     var bind = parsed[i]
     if (!bind || typeof bind.key !== "string" || bind.key.length === 0) continue
     list.push({
       modmask: Number(bind.modmask) || 0,
-      key: bind.key.toUpperCase(),
-      description: typeof bind.description === "string" ? bind.description.slice(0, 80) : ""
+      key: displayText(bind.key, 40).toUpperCase(),
+      description: displayText(bind.description, 80)
     })
   }
   return list

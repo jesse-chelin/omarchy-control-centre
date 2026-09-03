@@ -180,6 +180,38 @@ so it is recognised rather than learned, and Omarchy's own binding for it reads
 author's to spell. The rule, if a label is ever added: match Omarchy where
 Omarchy has a word for it, and only otherwise choose.
 
+## Bounds belong on the producing side
+
+Read across the marketplace's own review queue, the concern raised more than
+any other is a producer whose output nothing bounds until after it has been
+allocated. Quickshell's `StdioCollector` has no cap: it takes whatever arrives
+and hands it over whole, and `waitForEnd: true` means the size is only
+knowable once all of it is in memory, which is the wrong side of the question.
+
+So `waitForEnd` is off on every collector here, the size is checked while the
+bytes are arriving, and past the cap the child is killed and the read is
+abandoned rather than trimmed. Half of a probe's answer is worse than none of
+it: the flags that did not arrive read as flags that are off.
+
+The one output whose size is set by something other than this plugin is the
+binding list. Measured: 226 bindings, 101 KB. `probe.sh` now projects it to
+the three fields the card reads, caps the array, and caps the bytes, which
+brings it to 14 KB before it crosses into QML at all. `parseBinds` caps the
+array again at the same number, and neither cap trusts the other. Everything
+else this runs answers in under a kilobyte.
+
+## Text from somewhere else is not a label
+
+A track title is whatever the playing application put in MPRIS, a sink name
+is a device's description of itself, and a binding description comes out of
+someone else's config. None of them is bounded, one line, or free of
+characters a label has no use for.
+
+`Model.displayText` drops control characters, bidi overrides and zero-width
+marks, collapses runs of space, and cuts to a length. Eliding was already
+there and is not the same thing: it decides how a string is drawn, not how
+long the string is allowed to be.
+
 ## Glyphs go missing, silently
 
 Every glyph is embedded as a literal character, because a JavaScript escape

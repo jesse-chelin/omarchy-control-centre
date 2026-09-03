@@ -181,12 +181,42 @@ Item {
     }
   }
 
+  // Quickshell's StdioCollector has no cap of its own, and it allocates
+  // whatever a producer sends before anything here reads it. `waitForEnd` is
+  // therefore off: with it on, the size is only knowable once all of it has
+  // been allocated, which is the wrong side of the question.
+  //
+  // Past the cap the read is abandoned rather than trimmed. Half of a probe's
+  // output is worse than none of it, because it reads as flags that are off
+  // rather than flags that were never answered.
+  component CappedCollector: StdioCollector {
+    property int maxBytes: 65536
+    property bool overflowed: false
+    waitForEnd: false
+    onDataChanged: if (!overflowed && text.length > maxBytes) overflowed = true
+  }
+
   // Every subprocess in this file is one of these: fixed argv, cleared
-  // environment, watchdog.
+  // environment, watchdog, bounded output.
+  //
+  // Nothing here comes near the cap. Measured on this machine: the binding
+  // list is the largest at 14 KB, after probe.sh has bounded it at the
+  // producer, and every other command answers in under a kilobyte.
   component Child: Process {
     id: child
+    property CappedCollector output: null
+    stdout: output
+    readonly property bool overflowed: output !== null && output.overflowed
+
     clearEnvironment: true
     environment: root.childEnvironment
+    onOverflowedChanged: {
+      if (!overflowed) return
+      console.warn("control-centre: " + (command && command.length ? command[0] : "a child")
+                   + " sent more than " + child.output.maxBytes
+                   + " bytes; stopping it and dropping the read")
+      child.signal(9)
+    }
     onRunningChanged: {
       if (running) dog.arm()
       else dog.stop()
@@ -302,7 +332,7 @@ Item {
 
   Child {
     id: bluetoothProc
-    stdout: StdioCollector { waitForEnd: true }
+    output: CappedCollector { waitForEnd: false }
     onExited: function(exitCode) {
       if (exitCode !== 0) root.failPending("bluetooth", "Bluetooth adapter unavailable")
     }
@@ -384,7 +414,7 @@ Item {
       || node.description || p["node.description"] || node.name || "").trim()
     label = label.replace(/^sof-soundwire\s+/i, "").replace(/^built-?in audio\s+/i, "")
       .replace(/\s+Output$/i, "").replace(/\s+Input$/i, "")
-    return label
+    return Model.displayText(label, 60)
   }
 
   function setOutputVolume(v) {
@@ -416,7 +446,7 @@ Item {
 
   Child {
     id: sinkProc
-    stdout: StdioCollector { waitForEnd: true }
+    output: CappedCollector { waitForEnd: false }
     onExited: root.resolveVolumeSink()
   }
 
@@ -427,9 +457,10 @@ Item {
   Child {
     id: sinkNameProbe
     command: ["omarchy-audio-output-sink"]
-    stdout: StdioCollector {
-      waitForEnd: true
+    output: CappedCollector {
+      waitForEnd: false
       onStreamFinished: {
+        if (overflowed) return
         var name = String(text || "").trim()
         root.volumeSinkName = Model.isNodeName(name) ? name : ""
       }
@@ -439,9 +470,10 @@ Item {
   Child {
     id: sinkAvailabilityProbe
     command: ["omarchy-audio-sink-availability"]
-    stdout: StdioCollector {
-      waitForEnd: true
+    output: CappedCollector {
+      waitForEnd: false
       onStreamFinished: {
+        if (overflowed) return
         var next = {}
         var lines = String(text || "").split("\n")
         for (var i = 0; i < lines.length && i < 64; i++) {
@@ -481,9 +513,10 @@ Item {
   Child {
     id: stateProbe
     command: [root.pluginDir + "/probe.sh", "state"]
-    stdout: StdioCollector {
-      waitForEnd: true
+    output: CappedCollector {
+      waitForEnd: false
       onStreamFinished: {
+        if (overflowed) return
         var next = root.parseProbe(text, 64)
         root.flags = next
         root.currentTheme = /^[a-z0-9][a-z0-9-]{0,63}$/.test(next["theme.current"] || "")
@@ -497,9 +530,10 @@ Item {
   Child {
     id: staticProbe
     command: [root.pluginDir + "/probe.sh", "static"]
-    stdout: StdioCollector {
-      waitForEnd: true
+    output: CappedCollector {
+      waitForEnd: false
       onStreamFinished: {
+        if (overflowed) return
         var lines = String(text || "").split("\n")
         var hw = {}
         var list = []
@@ -628,7 +662,7 @@ Item {
 
   Child {
     id: flagProc
-    stdout: StdioCollector { waitForEnd: true }
+    output: CappedCollector { waitForEnd: false }
     onExited: function(exitCode) {
       if (exitCode !== 0) {
         for (var i = 0; i < root.flagTiles.length; i++) {
@@ -703,9 +737,10 @@ Item {
   Child {
     id: bindsProbe
     command: [root.pluginDir + "/probe.sh", "binds"]
-    stdout: StdioCollector {
-      waitForEnd: true
+    output: CappedCollector {
+      waitForEnd: false
       onStreamFinished: {
+        if (overflowed) return
         root.systemBinds = Model.parseBinds(text)
         root.currentBind = Model.findOwnBind(root.systemBinds, root.bindDescription)
         root.bindsLoaded = true
@@ -783,9 +818,12 @@ Item {
   Child {
     id: keybindProc
     property string reply: ""
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: keybindProc.reply = String(text).trim()
+    output: CappedCollector {
+      waitForEnd: false
+      onStreamFinished: {
+        if (overflowed) return
+        keybindProc.reply = String(text).trim()
+      }
     }
     onExited: function(exitCode) {
       if (exitCode !== 0) {
@@ -805,7 +843,7 @@ Item {
   Child {
     id: reloadProc
     command: ["hyprctl", "reload"]
-    stdout: StdioCollector { waitForEnd: true }
+    output: CappedCollector { waitForEnd: false }
     onExited: bindVerify.restart()
   }
 
@@ -830,7 +868,7 @@ Item {
 
   Child {
     id: themeProc
-    stdout: StdioCollector { waitForEnd: true }
+    output: CappedCollector { waitForEnd: false }
     onExited: function(exitCode) {
       if (exitCode !== 0) root.failPending("theme", "Could not switch theme")
       if (!stateProbe.running) stateProbe.running = true
@@ -851,9 +889,10 @@ Item {
   Child {
     id: monitorProbe
     command: ["omarchy-monitor-state"]
-    stdout: StdioCollector {
-      waitForEnd: true
+    output: CappedCollector {
+      waitForEnd: false
       onStreamFinished: {
+        if (overflowed) return
         var lines = String(text || "").split("\n")
         var brightness = String(lines[0] || "").trim()
         var available = brightness !== "unavailable" && /^\d{1,3}$/.test(brightness)
@@ -900,7 +939,7 @@ Item {
 
   Child {
     id: setBrightnessProc
-    stdout: StdioCollector { waitForEnd: true }
+    output: CappedCollector { waitForEnd: false }
     onRunningChanged: {
       if (running) return
       if (root.brightnessSetQueued) root.setBrightness(root.pendingBrightnessPercent)
@@ -924,9 +963,10 @@ Item {
   Child {
     id: profilesProbe
     command: ["omarchy-powerprofiles-list", "--active-state"]
-    stdout: StdioCollector {
-      waitForEnd: true
+    output: CappedCollector {
+      waitForEnd: false
       onStreamFinished: {
+        if (overflowed) return
         var parsed = Model.parseProfiles(text)
         root.profiles = parsed.profiles
         root.activeProfile = parsed.active
@@ -938,9 +978,10 @@ Item {
   Child {
     id: batteryProbe
     command: ["omarchy-battery-status", "--shell"]
-    stdout: StdioCollector {
-      waitForEnd: true
+    output: CappedCollector {
+      waitForEnd: false
       onStreamFinished: {
+        if (overflowed) return
         var next = Model.parseKeyValue(text)
         if (Object.keys(next).length > 0) root.batteryInfo = next
       }
@@ -956,7 +997,7 @@ Item {
 
   Child {
     id: profileProc
-    stdout: StdioCollector { waitForEnd: true }
+    output: CappedCollector { waitForEnd: false }
     onExited: function(exitCode) {
       if (exitCode !== 0) root.failPending("power", "Could not set power profile")
       if (!profilesProbe.running) profilesProbe.running = true
@@ -978,9 +1019,12 @@ Item {
   Child {
     id: recordingProbe
     command: ["pgrep", "-f", "^gpu-screen-recorder"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.recordingPid = Model.parsePid(text)
+    output: CappedCollector {
+      waitForEnd: false
+      onStreamFinished: {
+        if (overflowed) return
+        root.recordingPid = Model.parsePid(text)
+      }
     }
     onExited: function(exitCode) {
       var live = exitCode === 0
@@ -997,9 +1041,12 @@ Item {
 
   Child {
     id: elapsedProbe
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.recordingElapsed = Model.parseElapsed(text)
+    output: CappedCollector {
+      waitForEnd: false
+      onStreamFinished: {
+        if (overflowed) return
+        root.recordingElapsed = Model.parseElapsed(text)
+      }
     }
   }
 
@@ -1019,7 +1066,7 @@ Item {
 
   Child {
     id: stopRecordingProc
-    stdout: StdioCollector { waitForEnd: true }
+    output: CappedCollector { waitForEnd: false }
     onExited: function(exitCode) {
       if (exitCode !== 0) root.failPending("recording", "Could not stop the recording")
       if (!recordingProbe.running) recordingProbe.running = true
@@ -1172,9 +1219,12 @@ Item {
   Child {
     id: stateReader
     command: [root.pluginDir + "/state.py", "read", root.statePath]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.loadSettings(text)
+    output: CappedCollector {
+      waitForEnd: false
+      onStreamFinished: {
+        if (overflowed) return
+        root.loadSettings(text)
+      }
     }
   }
 
@@ -1182,7 +1232,7 @@ Item {
     id: stateWriter
     command: [root.pluginDir + "/state.py", "write", root.statePath]
     stdinEnabled: false
-    stdout: StdioCollector { waitForEnd: true }
+    output: CappedCollector { waitForEnd: false }
     onStarted: {
       stateWriter.write(Model.serializeSettings(root.settings))
       stateWriter.stdinEnabled = false
@@ -2425,8 +2475,8 @@ Item {
                   id: mediaComp
                   MediaTile {
                     anchors.fill: parent
-                    title: root.mediaService ? String(root.mediaService.title || "") : ""
-                    artist: root.mediaService ? String(root.mediaService.artist || "") : ""
+                    title: root.mediaService ? Model.displayText(root.mediaService.title, 120) : ""
+                    artist: root.mediaService ? Model.displayText(root.mediaService.artist, 120) : ""
                     artUrl: root.mediaService ? String(root.mediaService.artUrl || "") : ""
                     playing: root.mediaPlayer ? root.mediaPlayer.isPlaying === true : false
                     canGoPrevious: root.mediaPlayer ? root.mediaPlayer.canGoPrevious === true : false

@@ -110,8 +110,17 @@ case "${1:-state}" in
   binds)
     # Every binding on the system, so the card can say what already holds a
     # combination rather than only that something does. Read on demand, never
-    # on a timer: it is the largest thing this script fetches.
-    timeout 2s hyprctl -j binds 2>/dev/null || echo "[]"
+    # on a timer: it is the largest thing this script fetches, and the only
+    # one whose size is set by something other than this script.
+    #
+    # Bounded here rather than after it has crossed into QML. Only the three
+    # fields the card reads are passed through, the array is capped, and the
+    # whole thing is capped again in bytes, so what the card parses is bounded
+    # before it is allocated rather than after. Measured on this machine: 226
+    # bindings, 101 KB whole, 14 KB projected.
+    timeout 2s hyprctl -j binds 2>/dev/null |
+      jq -c '[limit(600; .[] | {modmask, key, description})]' 2>/dev/null |
+      head -c 262144 | grep . || echo "[]"
     ;;
 
   *)

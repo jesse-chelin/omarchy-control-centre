@@ -234,6 +234,41 @@ TestCase {
     verify(!Model.tileEnabled(settings, "volume"))
   }
 
+  // ---- text from outside ---------------------------------------------------
+
+  function test_display_text_drops_what_a_label_cannot_use() {
+    compare(Model.displayText("Hello\u0000\u001bworld"), "Hello world", "control characters")
+    compare(Model.displayText("two\nlines"), "two lines", "a newline is not a label")
+    compare(Model.displayText("a\u202Eb"), "a b", "a bidi override")
+    compare(Model.displayText("z\u200Bz"), "z z", "a zero-width space")
+    compare(Model.displayText("  spaced   out  "), "spaced out", "runs of space collapse")
+    compare(Model.displayText(undefined), "", "nothing is not a crash")
+    compare(Model.displayText(null), "", "null is not the word null")
+  }
+
+  function test_display_text_is_bounded() {
+    var long = ""
+    for (var i = 0; i < 5000; i++) long += "x"
+    compare(Model.displayText(long, 60).length, 60, "a title is cut, not elided")
+    compare(Model.displayText(long).length, 200, "and there is a default bound")
+    compare(Model.displayText("short", 60), "short", "what fits is untouched")
+  }
+
+  function test_binds_are_bounded_and_cleaned() {
+    var many = []
+    for (var i = 0; i < 900; i++) many.push({ modmask: 0, key: "A", description: "d" })
+    compare(Model.parseBinds(JSON.stringify(many)).length, 600, "the array is capped")
+
+    var nasty = [{ modmask: 64, key: "a", description: "Holds it\u0000\n" }]
+    var parsed = Model.parseBinds(JSON.stringify(nasty))
+    compare(parsed[0].key, "A", "a key is upper case")
+    compare(parsed[0].description, "Holds it", "a description is cleaned")
+
+    compare(Model.parseBinds("not json").length, 0, "junk is not a crash")
+    compare(Model.parseBinds('{"not":"an array"}').length, 0, "an object is not a list")
+    compare(Model.parseBinds("[]").length, 0, "empty is empty")
+  }
+
   function test_density_is_a_choice_with_a_default() {
     compare(Model.defaultSettings().density, "comfortable")
     compare(Model.nextDensity("comfortable"), "compact")
