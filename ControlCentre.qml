@@ -51,13 +51,42 @@ Item {
   property string settingsRejected: ""
   readonly property bool reduceMotion: settings.reduceMotion === true
 
+  // Where the card points when it was opened from the bar pill: the centre of
+  // that icon, along the bar. -1 means it was summoned by key, and the
+  // position setting decides instead.
+  property int anchorCentre: -1
+
+  // The payload is written by this plugin's own bar widget, but it arrives
+  // through shell IPC where anyone can send one, so both fields are checked
+  // rather than trusted.
+  function applyPayload(payloadJson) {
+    var payload = null
+    var text = String(payloadJson || "")
+    if (text.length > 0 && text.length < 4096) {
+      try { payload = JSON.parse(text) } catch (e) { payload = null }
+    }
+    var anchor = payload && typeof payload.anchor === "number" && isFinite(payload.anchor)
+      ? Math.round(payload.anchor) : -1
+    root.anchorCentre = anchor >= 0 ? anchor : -1
+
+    var named = payload && typeof payload.screen === "string" ? payload.screen : ""
+    var screens = Quickshell.screens
+    for (var i = 0; i < screens.length; i++) {
+      if (screens[i] && String(screens[i].name) === named) {
+        root.screenName = named
+        return
+      }
+    }
+    root.screenName = root.focusedScreenName()
+  }
+
   function open(payloadJson) {
     root.bindServices()
     root.editing = false
     root.status = ""
     root.sleepArmed = false
     root.tileErrors = ({})
-    root.screenName = root.focusedScreenName()
+    root.applyPayload(payloadJson)
     // Re-read on every open, not only at load, so a settings file edited or
     // removed by hand takes effect at the next summon rather than at the next
     // shell restart. Skipped while a write is in flight, because reading then
@@ -1033,6 +1062,7 @@ Item {
       settingsRejected: root.settingsRejected,
       hintVisible: root.hintVisible,
       screen: root.screenName,
+      anchorCentre: root.anchorCentre,
       pending: root.pending,
       errors: root.tileErrors,
       state: {
@@ -1203,16 +1233,26 @@ Item {
     readonly property int cardHeight: Math.min(panel.height - Style.gapsOut * 2 - (root.barHidden ? 0 : root.barSize),
       content.implicitHeight + root.padding * 2 + Border.top(root.borderSpec) + Border.bottom(root.borderSpec))
     readonly property bool centred: root.settings.position === "centre"
+    // Opened from the pill, the card centres on that icon and is clamped to
+    // the screen, which is what every stock bar panel does. Opened by key it
+    // follows the position setting, and an explicit "centre" always wins:
+    // someone who asked for the middle of the screen means it.
+    readonly property bool anchored: root.anchorCentre >= 0 && !centred
+    function clampAlong(value, size, extent) {
+      return Math.round(Math.max(Style.gapsOut, Math.min(value, extent - size - Style.gapsOut)))
+    }
     readonly property int restX: {
       if (centred) return Math.round((panel.width - cardWidth) / 2)
       if (root.barPosition === "right") return panel.width - cardWidth - root.barInset
       if (root.barPosition === "left") return root.barInset
+      if (anchored) return clampAlong(root.anchorCentre - cardWidth / 2, cardWidth, panel.width)
       return panel.width - cardWidth - Style.gapsOut
     }
     readonly property int restY: {
       if (centred) return Math.round((panel.height - cardHeight) / 2)
       if (root.barPosition === "bottom") return panel.height - cardHeight - root.barInset
       if (root.barPosition === "top") return root.barInset
+      if (anchored) return clampAlong(root.anchorCentre - cardHeight / 2, cardHeight, panel.height)
       return Style.gapsOut
     }
     readonly property int slide: Style.space(8)

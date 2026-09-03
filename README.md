@@ -36,7 +36,10 @@ Omarchy 4.0.1 defaults. `SUPER + C` is Universal copy and `SUPER + SHIFT + C`
 is the Calendar web app, so neither of those is free.
 
 A launcher icon also appears in the bar, so the card is one click away
-without a keybinding. Turn it off with **Bar pill** in the card's edit mode.
+without a keybinding. It behaves like the stock bar icons: the card opens
+under it, the icon takes the accent mark while the card is up, and opening
+another bar panel puts it away (and the other way round). Turn it off with
+**Bar pill** in the card's edit mode.
 
 ## Keys
 
@@ -83,7 +86,9 @@ shell can only summon a panel that is mounted there.
 
 Press `,` or click the gear. Tiles can be hidden and reordered, the card can
 open at the bar end or in the centre, all animation can be turned off, and the
-bar pill can be turned off. Everything is saved as you change it.
+bar pill can be turned off. **Centre** is honoured however the card was
+opened; **Bar end** means under the bar icon when you click it, and at the end
+of the bar when you press the key. Everything is saved as you change it.
 
 State lives in `~/.local/state/omarchy/control-centre.json`, written with mode
 0600. Delete it to start over; the card re-reads it every time it opens.

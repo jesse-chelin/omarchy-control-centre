@@ -28,6 +28,26 @@ panel during a plugin reload (`unloadPanels`), so an overlay can be closed out
 from under you while you are editing its files. That is development behaviour,
 not a bug: `omarchy-restart-shell` is the way to pick up edits.
 
+## Behaving like a bar panel
+
+The bar keeps one open popup at a time in `bar.activePopout`, claimed with
+`bar.requestPopout(owner)` and dropped with `bar.releasePopout(owner)`.
+Requesting it closes the previous owner by calling its `closeForPopoutSwitch()`
+or `close()`. The accent open-panel mark under a bar icon is drawn by the bar
+itself, on the test `activePopout === slot.activeItem`, so the owner passed in
+has to be the widget instance for the mark to appear.
+
+That is the whole of what makes the pill behave like the stock icons: the bar
+widget claims the popout while the overlay is up, and exposes `opened`,
+`close()` and `closeForPopoutSwitch()` for the coordinator to drive.
+
+Position comes from the widget rather than from the overlay, because only the
+widget knows where it sits: `item.mapToItem(window.contentItem, 0, 0)` inside
+the bar window gives a coordinate that maps straight to the screen on the axis
+the bar spans, which is what `KeyboardPanel` relies on too. It travels to the
+overlay in the summon payload, which is validated on arrival: the payload
+reaches `open()` through shell IPC, where anything can send one.
+
 ## Wi-Fi
 
 `Networking.wifiEnabled` is writable and toggles the NetworkManager radio with
