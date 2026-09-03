@@ -1255,14 +1255,22 @@ Item {
       if (anchored) return clampAlong(root.anchorCentre - cardHeight / 2, cardHeight, panel.height)
       return Style.gapsOut
     }
+    // The card enters from the bar it belongs to: down from a top bar, up from
+    // a bottom one, inward from a side one.
     readonly property int slide: Style.space(8)
     readonly property int slideX: root.barPosition === "left" ? -slide : (root.barPosition === "right" ? slide : 0)
     readonly property int slideY: root.barPosition === "bottom" ? slide : (root.barPosition === "top" ? -slide : 0)
 
     BorderSurface {
       id: card
-      x: panel.restX + (root.opened ? 0 : panel.slideX)
-      y: panel.restY + (root.opened ? 0 : panel.slideY)
+      // The resting position is assigned, never animated. It is derived from
+      // the card's own width and height, and both settle a frame or two after
+      // the surface maps and again whenever a probe adds a tile; animating
+      // that turned a card pinned to the right edge into one that slid in
+      // sideways as it grew. The entrance is a transform instead, which is
+      // the only movement anyone should see.
+      x: panel.restX
+      y: panel.restY
       width: panel.cardWidth
       height: panel.cardHeight
       radius: Style.cornerRadius
@@ -1271,12 +1279,22 @@ Item {
       padding: root.padding
       opacity: root.opened ? 1 : 0
 
+      // 1 while closed, 0 once open: the offset the card enters from.
+      property real slideProgress: root.opened ? 0 : 1
+
       Behavior on opacity {
         enabled: !root.reduceMotion
         NumberAnimation { duration: root.opened ? 120 : 80; easing.type: Easing.OutCubic }
       }
-      Behavior on x { enabled: !root.reduceMotion; NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-      Behavior on y { enabled: !root.reduceMotion; NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+      Behavior on slideProgress {
+        enabled: !root.reduceMotion
+        NumberAnimation { duration: root.opened ? 120 : 80; easing.type: Easing.OutCubic }
+      }
+
+      transform: Translate {
+        x: panel.slideX * card.slideProgress
+        y: panel.slideY * card.slideProgress
+      }
 
       MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onPressed: {} }
 

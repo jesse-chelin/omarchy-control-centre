@@ -140,6 +140,24 @@ Checked against the Omarchy 4.0.1 defaults with `hyprctl -j binds`:
 `SUPER + CTRL + C` is the Capture menu, and `SUPER + I` in the default set is
 "Toggle locking on idle" under `SUPER + CTRL`. `SUPER + BACKSLASH` was free.
 
+## Motion
+
+The card's resting position is derived from its own width and height: it is
+pinned to the bar end or centred on the bar icon, so `x` is computed from
+`cardWidth`, which settles a frame or two after the layer surface maps and
+again whenever a probe adds or removes a tile. A `Behavior` on `x` therefore
+animates layout settling, and what that looks like is a card sliding in
+sideways as it grows, which is not motion anyone asked for.
+
+The entrance is a `Translate` transform driven by one animated property
+instead, and `x`/`y` are assigned outright. Layout settles instantly while the
+card is still transparent, and the only movement on screen is the 8 px
+entrance from the bar edge.
+
+Measured with the fade disabled and the slide slowed to 1400 ms, differencing
+three frames against a closed baseline: the card's left edge is constant to
+the pixel across all three, and its top edge moves down into place.
+
 ## Measured
 
 - Open latency, warm, including two IPC round trips: 57 to 87 ms.
