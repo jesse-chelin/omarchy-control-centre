@@ -94,10 +94,14 @@ Press `,` or click the gear. Your card comes first, in the order it actually
 uses, and everything else sits below it grouped by what it does.
 
 Drag a control to move it. Drag one up from the groups below and it joins your
-card where you dropped it. Enter or a click shows and hides the one under the
+card where you dropped it, and dragging near the top or bottom scrolls the
+list while you hold it. Enter or a click shows and hides the one under the
 cursor, and Ctrl with the arrows moves it for anyone who would rather not
-drag. The card saves as you go, and a long catalogue scrolls with the cursor
-pulling the view along.
+drag. The card saves as you go.
+
+Clicking away while you are arranging leaves edit mode rather than closing the
+card, which is what Escape does too. A second click, or a second Escape,
+closes it.
 
 ## Settings
 

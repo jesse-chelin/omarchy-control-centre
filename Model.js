@@ -531,6 +531,26 @@ function moveCursor(cells, index, dx, dy) {
   return index
 }
 
+// Which tile a point lands on, from the grid's own geometry. The dragged
+// tile is painted away from its slot, so asking what is under the pointer
+// would answer with the thing being carried; the slots are the truth.
+//
+//   "self"  the pointer is back over where the drag started, so a drop here
+//           should do nothing
+//   ""      a heading, a settings row, a gap, or off the grid entirely
+function tileAtPoint(cells, x, y, draggingId) {
+  if (!cells) return ""
+  for (var i = 0; i < cells.length; i++) {
+    var cell = cells[i]
+    if (x < cell.x || x > cell.x + cell.width) continue
+    if (y < cell.y || y > cell.y + cell.height) continue
+    if (cell.id === String(draggingId)) return "self"
+    if (isHeader(cell.id) || kindOf(cell.id) === "option") return ""
+    return cell.id
+  }
+  return ""
+}
+
 function firstFocusableCell(cells) {
   for (var i = 0; i < cells.length; i++) if (isFocusable(cells[i].id)) return i
   return -1

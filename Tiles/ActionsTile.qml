@@ -14,7 +14,6 @@ TileSurface {
 
   signal activated(string id)
   signal actionHovered(int index)
-  signal moveRequested(int delta)
 
   active: false
   dimmed: editing && !enabledInSettings
@@ -28,7 +27,7 @@ TileSurface {
     anchors.bottomMargin: root.borderBottom + Style.spacing.sm
     spacing: Style.spacing.sm
 
-    readonly property int count: root.actions.length + (root.editing ? 1 : 0)
+    readonly property int count: root.actions.length
     readonly property real cellWidth: count > 0 ? (width - spacing * (count - 1)) / count : 0
 
     Repeater {
@@ -54,22 +53,5 @@ TileSurface {
       }
     }
 
-    Row {
-      visible: root.editing
-      width: row.cellWidth
-      height: row.height
-      PanelActionButton {
-        iconText: "󰅁"; tooltipText: "Move up"; fontSize: Style.font.body
-        foreground: root.foreground; fontFamily: root.fontFamily
-        anchors.verticalCenter: parent.verticalCenter
-        onClicked: root.moveRequested(-1)
-      }
-      PanelActionButton {
-        iconText: "󰅂"; tooltipText: "Move down"; fontSize: Style.font.body
-        foreground: root.foreground; fontFamily: root.fontFamily
-        anchors.verticalCenter: parent.verticalCenter
-        onClicked: root.moveRequested(1)
-      }
-    }
   }
 }

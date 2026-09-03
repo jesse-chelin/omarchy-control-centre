@@ -20,7 +20,6 @@ TileSurface {
 
   signal themeClicked(string name)
   signal themeHovered(int index)
-  signal moveRequested(int delta)
 
   readonly property color dim: Qt.darker(foreground, 1.5)
   readonly property string shown: pendingTheme !== "" ? pendingTheme : current
@@ -78,21 +77,6 @@ TileSurface {
       font.bold: true
     }
 
-    Row {
-      anchors.right: parent.right
-      anchors.verticalCenter: glyphText.verticalCenter
-      visible: root.editing
-      PanelActionButton {
-        iconText: "󰅁"; tooltipText: "Move up"; fontSize: Style.font.body
-        foreground: root.foreground; fontFamily: root.fontFamily
-        onClicked: root.moveRequested(-1)
-      }
-      PanelActionButton {
-        iconText: "󰅂"; tooltipText: "Move down"; fontSize: Style.font.body
-        foreground: root.foreground; fontFamily: root.fontFamily
-        onClicked: root.moveRequested(1)
-      }
-    }
 
     Flow {
       anchors.left: parent.left

@@ -1668,36 +1668,69 @@ Item {
   property real dragDX: 0
   property real dragDY: 0
 
-  function beginDrag(id) {
+  property real dragStartX: 0
+  property real dragStartY: 0
+  property real dragPointX: 0
+  property real dragPointY: 0
+
+  function beginDrag(id, item, pressX, pressY, gridItem) {
     if (!root.editing || Model.kindOf(id) === "option" || Model.isHeader(id)) return
+    // Captured before anything has moved, so it is the true grip point.
+    var start = item.mapToItem(gridItem, pressX, pressY)
+    root.dragStartX = start.x
+    root.dragStartY = start.y
     root.draggingId = id
     root.dropTargetId = ""
     root.dragDX = 0
     root.dragDY = 0
   }
 
-  function updateDrag(dx, dy, item, mouse, gridItem) {
+  function updateDrag(item, mouse, gridItem) {
     if (root.draggingId === "") return
-    root.dragDX = dx
-    root.dragDY = dy
+    // Where the pointer actually is, in the grid's frame. Mapping up through
+    // the dragged tile undoes its own transform on the way, so this stays
+    // true however far the tile has been carried, and the offset cannot feed
+    // back into the measurement that produced it.
     var point = item.mapToItem(gridItem, mouse.x, mouse.y)
-    root.dropTargetId = root.tileAt(point.x, point.y)
+    root.dragDX = point.x - root.dragStartX
+    root.dragDY = point.y - root.dragStartY
+    root.dragPointX = point.x
+    root.dragPointY = point.y
+
+    var over = Model.tileAtPoint(root.grid.cells, point.x, point.y, root.draggingId)
+    // Over its own slot means "put it back", so the target clears. Over a
+    // heading or a gap means nothing in particular, so the last real target
+    // stands rather than flickering off each time the pointer crosses a few
+    // pixels of background.
+    if (over === "self") root.dropTargetId = ""
+    else if (over !== "") root.dropTargetId = over
   }
 
-  // Which tile the pointer is over, by the grid's own geometry rather than by
-  // asking the items: the dragged tile is drawn away from its slot, and a hit
-  // test against what is painted would answer with the thing being dragged.
-  function tileAt(x, y) {
-    var cells = root.grid.cells
-    for (var i = 0; i < cells.length; i++) {
-      var cell = cells[i]
-      if (x < cell.x || x > cell.x + cell.width) continue
-      if (y < cell.y || y > cell.y + cell.height) continue
-      var id = cell.id
-      if (id === root.draggingId || Model.isHeader(id) || Model.kindOf(id) === "option") return ""
-      return id
-    }
-    return ""
+  // Auto-scroll while dragging near the top or bottom of the visible grid,
+  // because the grid stops flicking during a drag and a long catalogue does
+  // not fit on one screen. The pointer does not move while this runs, but its
+  // position within the content does, so the drag is re-measured each step.
+  property var scrollFn: null
+
+  function dragScrollStep() {
+    if (root.draggingId === "" || !root.scrollFn) return
+    root.scrollFn(root.dragPointY)
+  }
+
+  function shiftDragBy(delta) {
+    if (delta === 0) return
+    root.dragPointY += delta
+    root.dragDY = root.dragPointY - root.dragStartY
+    var over = Model.tileAtPoint(root.grid.cells, root.dragPointX, root.dragPointY, root.draggingId)
+    if (over === "self") root.dropTargetId = ""
+    else if (over !== "") root.dropTargetId = over
+  }
+
+  Timer {
+    interval: 16
+    repeat: true
+    running: root.draggingId !== ""
+    onTriggered: root.dragScrollStep()
   }
 
   function endDrag() {
@@ -1741,11 +1774,16 @@ Item {
     // moment a screen capture is safe to start.
     onBackingWindowVisibleChanged: if (!backingWindowVisible) root.flushQueuedCommand()
 
+    // Clicking away from the card while arranging it means "done arranging",
+    // not "throw the card away". Escape already reads that way round.
     MouseArea {
       anchors.fill: parent
       enabled: root.opened
       acceptedButtons: Qt.AllButtons
-      onPressed: root.dismiss()
+      onPressed: {
+        if (root.editing) root.setEditing(false)
+        else root.dismiss()
+      }
     }
 
     readonly property int cardWidth: root.contentWidth + root.padding * 2 + Border.left(root.borderSpec) + Border.right(root.borderSpec)
@@ -1859,6 +1897,7 @@ Item {
               height: root.headerHeight
 
               Text {
+                id: titleText
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.editing ? "Edit tiles" : "Control Centre"
@@ -1868,15 +1907,22 @@ Item {
                 font.bold: true
               }
 
+              // The title is what must not move, so the hint takes whatever
+              // room is left between it and the gear, and gives up characters
+              // rather than pushing anything aside.
               Text {
+                anchors.left: titleText.right
+                anchors.leftMargin: Style.spacing.xl
                 anchors.right: gear.left
                 anchors.rightMargin: Style.spacing.md
                 anchors.verticalCenter: parent.verticalCenter
                 visible: root.editing
-                text: "Enter shows or hides · Drag or Ctrl+arrows to reorder"
+                text: "Enter shows or hides · drag to reorder"
                 color: Qt.darker(root.foreground, 1.5)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
+                horizontalAlignment: Text.AlignRight
+                elide: Text.ElideRight
               }
 
               PanelActionButton {
@@ -1920,7 +1966,30 @@ Item {
 
             // Keeps the cursor on screen when the keyboard walks off the
             // visible part of a long catalogue.
-            Component.onCompleted: root.revealFn = scroller.revealCell
+            Component.onCompleted: {
+              root.revealFn = scroller.revealCell
+              root.scrollFn = scroller.dragScroll
+            }
+
+            // One step of the drag auto-scroll. Returns nothing; it tells the
+            // card how far it actually moved so the drag can be re-measured
+            // against content that has shifted underneath a still pointer.
+            readonly property int dragMargin: Style.space(36)
+            readonly property int dragStep: Style.space(8)
+            function dragScroll(pointY) {
+              if (contentHeight <= height) return
+              var top = contentY
+              var bottom = contentY + height
+              var delta = 0
+              if (pointY < top + dragMargin) delta = -dragStep
+              else if (pointY > bottom - dragMargin) delta = dragStep
+              if (delta === 0) return
+              var next = Math.max(0, Math.min(contentHeight - height, contentY + delta))
+              delta = next - contentY
+              if (delta === 0) return
+              contentY = next
+              root.shiftDragBy(delta)
+            }
             onHeightChanged: Qt.callLater(function() { scroller.revealCell(root.cursor) })
 
             function revealCell(index) {
@@ -1998,12 +2067,11 @@ Item {
                     onClicked: { root.cursor = cell.index; root.activate(cell.index) }
                     onRightClicked: { root.cursor = cell.index; if (!root.editing) root.openPanel(cell.modelData) }
                     onChevronClicked: root.openPanel(cell.modelData)
-                    onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
                     dropTarget: cell.isDropTarget
-                    onDragStarted: root.beginDrag(cell.modelData)
-                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
+                    onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
                   }
                 }
@@ -2050,7 +2118,6 @@ Item {
                     }
                     onChipClicked: { root.cursor = cell.index; if (isVolume) root.cycleSink() }
                     onChevronClicked: root.openPanel(cell.modelData)
-                    onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onMoved: function(v) {
                       root.cursor = cell.index
@@ -2068,8 +2135,8 @@ Item {
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
                     dropTarget: cell.isDropTarget
-                    onDragStarted: root.beginDrag(cell.modelData)
-                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
+                    onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
                   }
                 }
@@ -2101,13 +2168,12 @@ Item {
                     onProfileClicked: function(profile) { root.cursor = cell.index; root.setProfile(profile) }
                     onProfileHovered: function(index) { root.cursor = cell.index; root.subCursor = index }
                     onChevronClicked: root.openPanel("power")
-                    onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
                     dropTarget: cell.isDropTarget
-                    onDragStarted: root.beginDrag(cell.modelData)
-                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
+                    onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
                   }
                 }
@@ -2133,13 +2199,12 @@ Item {
                     fontFamily: root.fontFamily
                     onTransport: function(action) { root.cursor = cell.index; root.mediaAction(action) }
                     onControlHovered: function(index) { root.cursor = cell.index; root.subCursor = index }
-                    onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
                     dropTarget: cell.isDropTarget
-                    onDragStarted: root.beginDrag(cell.modelData)
-                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
+                    onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
                   }
                 }
@@ -2160,13 +2225,12 @@ Item {
                     fontFamily: root.fontFamily
                     onActivated: function(id) { root.cursor = cell.index; root.runAction(id) }
                     onActionHovered: function(index) { root.cursor = cell.index; root.subCursor = index }
-                    onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
                     dropTarget: cell.isDropTarget
-                    onDragStarted: root.beginDrag(cell.modelData)
-                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
+                    onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
                   }
                 }
@@ -2191,13 +2255,12 @@ Item {
                     fontFamily: root.fontFamily
                     onThemeClicked: function(name) { root.cursor = cell.index; root.setTheme(name) }
                     onThemeHovered: function(index) { root.cursor = cell.index; root.subCursor = index }
-                    onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
                     dropTarget: cell.isDropTarget
-                    onDragStarted: root.beginDrag(cell.modelData)
-                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
+                    onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
                   }
                 }
@@ -2235,8 +2298,8 @@ Item {
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: false
                     dropTarget: cell.isDropTarget
-                    onDragStarted: root.beginDrag(cell.modelData)
-                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
+                    onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
                   }
                 }

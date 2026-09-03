@@ -421,6 +421,61 @@ TestCase {
     compare(Model.tileEnabled(parsed, "transcode"), false, "a new tile that ships off arrives off")
   }
 
+  // ---- where a drop lands -------------------------------------------------
+
+  function dragCells() {
+    // wifi bluetooth dnd nightlight / volume(4 wide) / a heading / a setting
+    var ids = ["wifi", "bluetooth", "dnd", "nightlight", "volume",
+               Model.headerFor("sound"), "opt-motion"]
+    return Model.layout(ids, 100, 10, { toggle: 70, slider: 60, header: 20, option: 40 }).cells
+  }
+
+  function test_a_point_lands_on_the_tile_it_is_over() {
+    var cells = suite.dragCells()
+    compare(Model.tileAtPoint(cells, 50, 30, "volume"), "wifi")
+    compare(Model.tileAtPoint(cells, 160, 30, "volume"), "bluetooth")
+    // The wide slider row, anywhere along it.
+    compare(Model.tileAtPoint(cells, 20, 100, "wifi"), "volume")
+    compare(Model.tileAtPoint(cells, 400, 100, "wifi"), "volume")
+  }
+
+  function test_the_dragged_tile_reports_itself() {
+    var cells = suite.dragCells()
+    compare(Model.tileAtPoint(cells, 50, 30, "wifi"), "self",
+            "back over its own slot is a drop that should do nothing")
+  }
+
+  function test_nothing_takes_a_drop_that_should_not() {
+    var cells = suite.dragCells()
+    var heading = cells[5]
+    compare(Model.tileAtPoint(cells, heading.x + 5, heading.y + 5, "wifi"), "",
+            "a heading is not a slot")
+    var option = cells[6]
+    compare(Model.tileAtPoint(cells, option.x + 5, option.y + 5, "wifi"), "",
+            "a settings row is not a slot")
+  }
+
+  function test_a_gap_and_the_void_take_nothing() {
+    var cells = suite.dragCells()
+    // Between the first and second tile: cells are 100 wide with a 10 gap.
+    compare(Model.tileAtPoint(cells, 105, 30, "volume"), "")
+    compare(Model.tileAtPoint(cells, -20, 30, "volume"), "", "left of everything")
+    compare(Model.tileAtPoint(cells, 50, 9999, "volume"), "", "below everything")
+    compare(Model.tileAtPoint([], 50, 30, "volume"), "")
+    compare(Model.tileAtPoint(null, 50, 30, "volume"), "")
+  }
+
+  function test_a_drop_lands_where_the_hit_test_pointed() {
+    // The two halves of the gesture agree: whatever tileAtPoint names is a
+    // tile withTileDroppedOn can actually move onto.
+    var cells = suite.dragCells()
+    var target = Model.tileAtPoint(cells, 160, 30, "volume")
+    var moved = Model.withTileDroppedOn(Model.defaultSettings(), "volume", target)
+    var order = []
+    for (var i = 0; i < moved.tiles.length; i++) if (moved.tiles[i].enabled) order.push(moved.tiles[i].id)
+    compare(order[order.indexOf("volume") + 1], target, "it landed just before what it was dropped on")
+  }
+
   // ---- parsing what subprocesses print ------------------------------------
 
   function test_profiles_parse_and_ignore_anything_unexpected() {

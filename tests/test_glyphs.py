@@ -46,7 +46,6 @@ EXPECTED = {
     0xF1104: 'md-monitor_shimmer, the stock menu Screensaver glyph',
     0xF0493: 'md-cog, settings gear',
     0xF0142: 'md-chevron_right',
-    0xF0141: 'md-chevron_left',
     0xF012C: 'md-check, done',
     0xF032A: 'md-leaf, power-saver profile',
     0xF029A: 'md-scale_balance, balanced profile',

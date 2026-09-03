@@ -27,7 +27,6 @@ TileSurface {
   signal profileClicked(string profile)
   signal profileHovered(int index)
   signal chevronClicked()
-  signal moveRequested(int delta)
 
   readonly property color dim: Qt.darker(foreground, 1.5)
   readonly property int pad: Style.spacing.xl
@@ -130,18 +129,6 @@ TileSurface {
       anchors.verticalCenter: parent.verticalCenter
       spacing: 0
 
-      PanelActionButton {
-        visible: root.editing
-        iconText: "󰅁"; tooltipText: "Move up"; fontSize: Style.font.body
-        foreground: root.foreground; fontFamily: root.fontFamily
-        onClicked: root.moveRequested(-1)
-      }
-      PanelActionButton {
-        visible: root.editing
-        iconText: "󰅂"; tooltipText: "Move down"; fontSize: Style.font.body
-        foreground: root.foreground; fontFamily: root.fontFamily
-        onClicked: root.moveRequested(1)
-      }
       PanelActionButton {
         visible: root.chevron && !root.editing
         iconText: "󰅂"

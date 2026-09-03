@@ -192,12 +192,27 @@ measuring the mean pixel value says it actually paints something.
 
 ## Dragging inside a scrolling grid
 
-Two things make a drag work here, and both are easy to leave out.
+The offset a drag applies must not be measured in coordinates that offset
+moves. Qt reports a mouse position in the item's own frame, which already has
+the item's transform taken out of it, so `delta = mouse - pressPoint` on a
+transformed item feeds its own answer back in: set the transform to that
+delta and the next event reports a delta smaller by exactly the transform.
+The tile oscillates rather than following the pointer. The drag is measured
+in the grid's coordinates instead, capturing the grip point once before
+anything has moved and mapping the live pointer up through the tile each
+time, which undoes the transform on the way and leaves a true position.
+
+Three more things are easy to leave out.
 
 A `Flickable` takes the pointer grab off a child as soon as the pointer has
 travelled far enough, so a drag turns into a scroll halfway through unless the
 child sets `preventStealing`. The grid also stops being interactive while a
 drag is in flight, so the two gestures cannot both claim the same movement.
+
+That leaves no way to reach a target off-screen, so a drag near the top or
+bottom edge scrolls the grid itself. The pointer does not move while that
+happens but its position within the content does, so each step re-measures
+the drag against content that shifted underneath a still pointer.
 
 The dragged tile is drawn offset by a transform rather than moved. Its
 position is a binding on the grid's own layout, so moving the item would fight

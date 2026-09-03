@@ -19,7 +19,6 @@ TileSurface {
   property bool enabledInSettings: true
 
   signal chevronClicked()
-  signal moveRequested(int delta)
 
   readonly property color dim: Qt.darker(foreground, 1.5)
   readonly property color glyphColor: urgent ? Color.urgent : (active ? Style.selectedStateColor(foreground, accent) : dim)
@@ -52,34 +51,6 @@ TileSurface {
       alwaysRunToEnd: true
       NumberAnimation { from: 1.0; to: 0.4; duration: 800; easing.type: Easing.InOutSine }
       NumberAnimation { from: 0.4; to: 1.0; duration: 800; easing.type: Easing.InOutSine }
-    }
-  }
-
-  // Edit mode replaces the chevron with reorder arrows; a disabled tile says
-  // so in the same corner.
-  Row {
-    anchors.right: parent.right
-    anchors.top: parent.top
-    anchors.rightMargin: root.borderRight + Style.spacing.sm
-    anchors.topMargin: root.borderTop + Style.spacing.sm
-    spacing: 0
-    visible: root.editing
-
-    PanelActionButton {
-      iconText: "󰅁"
-      tooltipText: "Move left"
-      foreground: root.foreground
-      fontFamily: root.fontFamily
-      fontSize: Style.font.body
-      onClicked: root.moveRequested(-1)
-    }
-    PanelActionButton {
-      iconText: "󰅂"
-      tooltipText: "Move right"
-      foreground: root.foreground
-      fontFamily: root.fontFamily
-      fontSize: Style.font.body
-      onClicked: root.moveRequested(1)
     }
   }
 

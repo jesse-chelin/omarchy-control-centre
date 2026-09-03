@@ -32,7 +32,6 @@ TileSurface {
   signal chevronClicked()
   signal moved(real value)
   signal released(real value)
-  signal moveRequested(int delta)
 
   readonly property color dim: Qt.darker(foreground, 1.5)
   readonly property int pad: Style.spacing.xl
@@ -64,7 +63,7 @@ TileSurface {
       anchors.left: glyphButton.right
       anchors.leftMargin: Style.spacing.sm
       anchors.verticalCenter: glyphButton.verticalCenter
-      text: root.label
+      text: root.editing && !root.enabledInSettings ? root.label + "  ·  Hidden" : root.label
       color: root.foreground
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
@@ -112,8 +111,8 @@ TileSurface {
 
     Text {
       id: percentText
-      anchors.right: chevronButton.visible || editRow.visible ? chevronButton.left : parent.right
-      anchors.rightMargin: chevronButton.visible || editRow.visible ? Style.spacing.sm : 0
+      anchors.right: chevronButton.visible ? chevronButton.left : parent.right
+      anchors.rightMargin: chevronButton.visible ? Style.spacing.sm : 0
       anchors.verticalCenter: glyphButton.verticalCenter
       text: root.valueText
       color: root.muted ? root.dim : root.foreground
@@ -121,22 +120,6 @@ TileSurface {
       font.pixelSize: Style.font.bodySmall
     }
 
-    Row {
-      id: editRow
-      anchors.right: parent.right
-      anchors.verticalCenter: glyphButton.verticalCenter
-      visible: root.editing
-      PanelActionButton {
-        iconText: "󰅁"; tooltipText: "Move up"; fontSize: Style.font.body
-        foreground: root.foreground; fontFamily: root.fontFamily
-        onClicked: root.moveRequested(-1)
-      }
-      PanelActionButton {
-        iconText: "󰅂"; tooltipText: "Move down"; fontSize: Style.font.body
-        foreground: root.foreground; fontFamily: root.fontFamily
-        onClicked: root.moveRequested(1)
-      }
-    }
 
     PanelActionButton {
       id: chevronButton

@@ -34,8 +34,13 @@ BorderSurface {
   signal clicked()
   signal rightClicked()
   signal pointerMoved(var mouse)
-  signal dragStarted()
-  signal dragMoved(real dx, real dy, var item, var mouse)
+  // The drag reports positions, never deltas. A delta measured in this item's
+  // own coordinates is measured against a frame the drag itself is moving, so
+  // it feeds back on the next event and the tile oscillates. The card
+  // measures in the grid's coordinates, which the tile's transform cannot
+  // touch, and needs the press point to do it.
+  signal dragStarted(var item, real pressX, real pressY)
+  signal dragMoved(var item, var mouse)
   signal dragEnded()
 
   readonly property alias containsMouse: mouse.containsMouse
@@ -93,14 +98,14 @@ BorderSurface {
         root.pointerMoved(m)
         return
       }
-      var dx = m.x - pressX
-      var dy = m.y - pressY
       if (!dragging) {
-        if (Math.abs(dx) < root.dragThreshold && Math.abs(dy) < root.dragThreshold) return
+        // Still the tile's own coordinates, but nothing has moved yet, so
+        // they are the same as anyone else's.
+        if (Math.abs(m.x - pressX) < root.dragThreshold && Math.abs(m.y - pressY) < root.dragThreshold) return
         dragging = true
-        root.dragStarted()
+        root.dragStarted(root, pressX, pressY)
       }
-      root.dragMoved(dx, dy, root, m)
+      root.dragMoved(root, m)
     }
     onReleased: function(m) {
       if (!dragging) return
