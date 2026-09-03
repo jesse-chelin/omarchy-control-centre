@@ -33,8 +33,10 @@ shortcut**: click it, press the combination you want, and it is written into
 
 It writes one clearly marked block and leaves the rest of that file alone, and
 it keeps a copy of the file as it was in
-`~/.config/hypr/bindings.lua.before-control-centre`. Delete the three marked
-lines to be rid of it, or clear the shortcut from the card with Backspace.
+`~/.config/hypr/bindings.lua.before-control-centre`. Clear the shortcut from
+the card with Backspace to be rid of it, or delete the block by hand: it is
+five lines, from the `>>>` marker to the `<<<` one, and both markers have to go
+with it.
 
 Two things about capturing a shortcut are worth knowing. A combination that is
 already taken cannot be pressed into the field at all, because Hyprland
@@ -195,10 +197,20 @@ omarchy plugin remove io.github.jesse-chelin.control-centre
 rm -f ~/.local/state/omarchy/control-centre.json
 ```
 
-Then remove the binding you added to `~/.config/hypr/bindings.lua` and run
-`hyprctl reload`. If you turned the bar pill on, `omarchy bar` no longer lists
-it once the plugin is removed. The plugin registers nothing with any service,
-holds no credentials, starts no daemon, and leaves nothing else behind.
+That is everything the plugin owns. If you ever set a shortcut from the card,
+two files outside it were touched, and both are yours to remove:
+
+```sh
+rm -f ~/.config/hypr/bindings.lua.before-control-centre
+```
+
+and the five marked lines in `~/.config/hypr/bindings.lua`, from the `>>>`
+marker to the `<<<` one, followed by `hyprctl reload`. Clearing the shortcut
+from the card before you uninstall does the second one for you.
+
+If you turned the bar pill on, `omarchy bar` no longer lists it once the plugin
+is removed. The plugin registers nothing with any service, holds no
+credentials, starts no daemon, and leaves nothing else behind.
 
 ## Development
 

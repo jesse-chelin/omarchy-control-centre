@@ -339,6 +339,25 @@ exactly that, because a generated file there once carried an injected device
 name and must never be executed again. Generating Lua from a key combination
 someone typed is that same shape.
 
+## A marked block is its lines, not its markers
+
+"Everything between the two markers" is the obvious way to own a block in
+someone else's file, and it is wrong in one direction that costs them their
+keyboard. If the end marker is gone -- and the README used to invite exactly
+that, by calling a five-line block "the three marked lines" -- then reading to
+the end marker reads to the end of the file, and every binding below the block
+is deleted. Measured against the previous version: a file with a stray begin
+marker and two bindings under it came back with neither.
+
+The block is recognised by its own shape instead. Both markers and the three
+lines between them are literals this program writes, so a line that is none of
+them belongs to the user, whatever it sits between, and an unterminated block
+costs them the lines this wrote and nothing else.
+
+The test that was supposed to catch this put its half-block at the end of the
+file, where there is nothing below to lose. A repair case has to have
+something after it or it is testing the easy half.
+
 ## What a capture field cannot do here
 
 A bound combination never reaches any window: `hyprctl -j binds` reports

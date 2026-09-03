@@ -15,6 +15,12 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TOOL = ROOT / "keybind.py"
+sys.path.insert(0, str(ROOT))
+import keybind  # noqa: E402  the markers and the line shape, from the source of truth
+
+BEGIN = keybind.BEGIN
+END = keybind.END
+NOTE = "\n".join(keybind.NOTE)
 problems = []
 
 
@@ -78,10 +84,50 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # Half a block, left by someone editing the file, is repaired rather than
     # doubled or spread.
-    path.write_text(ORIGINAL + "\n-- >>> Control Centre plugin: managed keybinding >>>\n"
-                    'o.bind("SUPER + Z", "Control Centre", "x")\n')
+    path.write_text(ORIGINAL + "\n" + BEGIN + "\n"
+                    + keybind.bind_line("SUPER + Z") + "\n")
     check(run("set", str(path), "SUPER + BACKSLASH")[0] == 0, "an unterminated block was not repaired")
-    check(path.read_text().count("o.bind(\"SUPER + Z\"") == 0, "an unterminated block was left behind")
+    check(path.read_text().count('o.bind("SUPER + Z"') == 0, "an unterminated block was left behind")
+
+    # And the block a missing end marker leaves behind reaches only the lines
+    # this wrote. Everything below a stray marker is the user's file, and
+    # reading to the end of it was once how every binding under the block went
+    # away: the case above cannot show that, because nothing follows it.
+    below = 'o.bind("SUPER + B", "Browser", "chromium")\no.bind("SUPER + M", "Music", "true")\n'
+    half = ORIGINAL + "\n" + BEGIN + "\n" + NOTE + "\n" + keybind.bind_line("SUPER + Z") + "\n" + below
+
+    path.write_text(half)
+    check(run("clear", str(path))[0] == 0, "clear over an unterminated block failed")
+    after = path.read_text()
+    check('o.bind("SUPER + B"' in after and 'o.bind("SUPER + M"' in after,
+          "clear over an unterminated block ate the bindings below it")
+    check(ORIGINAL in after, "clear over an unterminated block lost the file above it")
+    check(BEGIN not in after and NOTE not in after and 'o.bind("SUPER + Z"' not in after,
+          "clear left part of an unterminated block behind")
+
+    path.write_text(half)
+    check(run("set", str(path), "SUPER + BACKSLASH")[0] == 0, "set over an unterminated block failed")
+    after = path.read_text()
+    check('o.bind("SUPER + B"' in after and 'o.bind("SUPER + M"' in after,
+          "set over an unterminated block ate the bindings below it")
+    check(ORIGINAL in after, "set over an unterminated block lost the file above it")
+    check(after.count(BEGIN) == 1 and after.count(END) == 1,
+          "set over an unterminated block did not leave exactly one block")
+    check('o.bind("SUPER + Z"' not in after, "set left the old managed binding behind")
+    check(run("show", str(path))[1] == "SUPER + BACKSLASH",
+          "the repaired block did not read back")
+
+    # A stray end marker on its own is this plugin's line too, and is cleaned
+    # up rather than left where it can swallow the next block.
+    path.write_text(ORIGINAL + END + "\n")
+    check(run("clear", str(path))[0] == 0, "a stray end marker was not handled")
+    check(END not in path.read_text(), "a stray end marker was left behind")
+    check(ORIGINAL in path.read_text(), "a stray end marker took the file with it")
+
+    # The pattern that recognises the managed line has to match the line the
+    # writer actually writes; they are two literals that can drift apart.
+    check(keybind.BIND_LINE.match(keybind.bind_line("SUPER + BACKSLASH")) is not None,
+          "the writer and the reader of the managed line disagree")
 
     # A symlink is never followed, and the target is untouched.
     secret = base / "elsewhere.lua"

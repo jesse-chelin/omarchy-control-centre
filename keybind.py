@@ -36,6 +36,16 @@ PLUGIN_ID = "io.github.jesse-chelin.control-centre"
 DESCRIPTION = "Control Centre"
 BEGIN = "-- >>> Control Centre plugin: managed keybinding >>>"
 END = "-- <<< Control Centre plugin: managed keybinding <<<"
+NOTE = (
+    "-- Written by the Control Centre plugin. Change it from the card's",
+    "-- settings, or delete these five lines to be rid of it.",
+)
+# Every note line any version of this has written. Recognising the older
+# wording is what stops an upgrade leaving a stale comment and a second copy
+# of the binding behind in a file that already had the block.
+KNOWN_NOTES = frozenset(NOTE) | {
+    "-- settings, or delete these three lines to be rid of it.",
+}
 
 MODS = ("SUPER", "CTRL", "ALT", "SHIFT")
 NAMED_KEYS = {
@@ -101,24 +111,37 @@ def read_config(path):
 
 
 def strip_block(text):
-    """Everything except the managed block, and what the block held."""
-    lines = text.split("\n")
+    """Everything except the managed block, and what the block held.
+
+    The block is recognised by its own shape rather than by "everything up to
+    the end marker": the two markers and the three lines between them are
+    literals this program writes, so a line that is none of them is the user's,
+    whatever it sits between. That is what makes a file whose end marker has
+    been edited away cost the user nothing. Reading to the end marker instead
+    reads the rest of someone's config as block contents and drops it, which is
+    every binding they have below the block.
+    """
     kept, held, inside = [], "", False
-    for line in lines:
-        if line.strip() == BEGIN:
+    for line in text.split("\n"):
+        stripped = line.strip()
+        # Both markers are ours wherever they appear, so a stray one left by a
+        # half-finished edit is cleaned up rather than left to swallow a block.
+        if stripped == BEGIN:
             inside = True
             continue
+        if stripped == END:
+            inside = False
+            continue
         if inside:
-            if line.strip() == END:
-                inside = False
+            if stripped in KNOWN_NOTES:
                 continue
-            match = re.search(r'o\.bind\("([A-Z0-9 +]{3,60})"', line)
+            match = BIND_LINE.match(stripped)
             if match:
                 held = match.group(1)
-            continue
+                continue
+            # Not a line this wrote: the block ended without saying so.
+            inside = False
         kept.append(line)
-    # An unterminated block means someone edited half of it away; the rest of
-    # the file is still whole, and rewriting the block repairs it.
     return "\n".join(kept), held
 
 
@@ -170,14 +193,20 @@ def write_config(path, text, mode):
         raise OSError("could not write the bindings file: %s" % error)
 
 
+def bind_line(combo):
+    return 'o.bind("%s", "%s", "omarchy-shell shell toggle %s")' % (combo, DESCRIPTION, PLUGIN_ID)
+
+
+# The same line bind_line writes, with the combination left open. Kept beside
+# it, and pinned to it by tests/test_keybind.py so the two cannot drift.
+BIND_LINE = re.compile(
+    r'^o\.bind\("([A-Z0-9 +]{3,60})", "%s", "omarchy-shell shell toggle %s"\)$'
+    % (re.escape(DESCRIPTION), re.escape(PLUGIN_ID))
+)
+
+
 def block_for(combo):
-    return "\n".join([
-        BEGIN,
-        "-- Written by the Control Centre plugin. Change it from the card's",
-        "-- settings, or delete these three lines to be rid of it.",
-        'o.bind("%s", "%s", "omarchy-shell shell toggle %s")' % (combo, DESCRIPTION, PLUGIN_ID),
-        END,
-    ])
+    return "\n".join([BEGIN] + list(NOTE) + [bind_line(combo), END])
 
 
 def main(argv):
