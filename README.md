@@ -155,22 +155,29 @@ No sudo or pkexec is required, and neither is ever invoked.
 block to `~/.config/hypr/bindings.lua`. That is the only file this plugin
 touches that it does not own, so: the combination is validated against a fixed
 grammar of modifiers and key names in the writer itself, whatever the card
-claims to have checked; only the text between the two markers is ever
-replaced, and every other byte of the file is copied through; the file is read
-with `O_NOFOLLOW` under a size cap and refused if it is a symlink, not a
-regular file, or owned by someone else; the new contents go to a private temp
-file in the same directory, are fsynced, and are renamed into place, so an
+claims to have checked; the managed block is recognised by the exact lines
+this plugin writes rather than by "everything up to the end marker", so a file
+whose markers have been edited loses those lines and keeps every line you
+wrote; the file is read once, with `O_NOFOLLOW` under a size cap, and refused
+if it is a symlink, not a regular file, or owned by someone else; every step
+after that is taken relative to a descriptor held open on the containing
+directory, so no swap between two steps can redirect the one that follows;
+the new contents go to a randomly named temp file created `O_EXCL` with its
+mode set at creation, fsynced and renamed within that same directory, so an
 interrupted write cannot leave a config Hyprland fails to parse; and a copy of
-the file as it was is kept beside it the first time. `tests/test_keybind.py`
-builds each hostile case and checks the refusal.
+the file as it was is kept beside it the first time, never refreshed after.
+`tests/test_keybind.py` builds each hostile case, including a symlinked file
+and a symlinked directory, and checks the refusal.
 
 **The settings file.** It sits in a directory anything running as you can
 write, so it is read and written by `state.py` rather than by QML, which has
 no way to cap what it reads. Reading opens with `O_NOFOLLOW`, and refuses a
 symlink, anything that is not a regular file, anything owned by another user,
-and anything over 64 KiB. Writing creates a private temp file with the mode
-set at creation, fsyncs it, renames it into place, fsyncs the directory, and
-refuses to replace anything that is not a regular file. Whatever survives the
+and anything over 64 KiB. Reading and writing both go through a descriptor
+held open on the containing directory rather than through the path a second
+time. Writing creates a randomly named `O_EXCL` temp file with the mode set at
+creation, fsyncs it, renames it within that directory, fsyncs the directory,
+and refuses to replace anything that is not a regular file. Whatever survives the
 read is then rebuilt field by field against the same bounds it is written
 under: an unknown tile id is dropped, a missing one is added, and a value
 outside its allowed set falls back to the default. A file that is refused
@@ -185,11 +192,29 @@ child per control. Every command a control can run is a literal argument
 vector in a table in `Model.js`, so the complete set of things this plugin can
 execute is a list you can read in one sitting. Each runs with a cleared
 environment holding only the variables those scripts need, with a fixed
-argument vector that is never built by string concatenation, under a watchdog
-that sends `TERM` and then `KILL`. Every value that reaches an argument vector
-is validated first against an allowlist or a pattern: a monitor name, a
-PipeWire node name or id, a power profile, a percentage. Every byte read back
-is parsed within a bound.
+argument vector that is never built by string concatenation, on a `PATH` set
+by this plugin rather than inherited, under a watchdog that sends `TERM` and
+then `KILL` a second later. Every external call inside `probe.sh` carries its
+own `timeout`, so a child that is killed cannot leave one running behind it.
+
+Every value that reaches an argument vector is validated first against an
+allowlist or a pattern: a monitor name, a PipeWire node name or id, a power
+profile, a percentage.
+
+Every byte read back is bounded before it is allocated, not after. Output is
+counted while it arrives rather than collected and measured at the end, and a
+producer past the cap is stopped and its output discarded rather than trimmed,
+because half of a probe's answer reads as flags that are off. The one output
+whose size is not set by this plugin, the Hyprland binding list, is projected
+to the three fields the card reads and capped in both length and bytes by
+`probe.sh` before it crosses into QML: 101 KB became 14 KB. Each probe ends
+with a completion line, and an answer without it changes nothing, so a probe
+that failed is never mistaken for a probe that answered no.
+
+Text that comes from elsewhere — a track title from whatever is playing, a
+sink's description of itself, a binding description from your config — has
+control characters, bidi overrides and zero-width marks removed and is cut to
+a length before it is drawn.
 
 **Nothing runs while the card is closed.** Every timer is bound to the card
 being open, which is verifiable: with the card closed, no probe process is
