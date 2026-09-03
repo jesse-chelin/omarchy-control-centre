@@ -137,6 +137,31 @@ def latched_visibility(path):
 
 
 
+def lost_glyphs(path):
+    """An icon bound to the empty string.
+
+    Every glyph in this plugin is embedded as a literal character, because a
+    JavaScript escape takes four hex digits and a Nerd Font codepoint takes
+    five. That makes a glyph easy to lose: it is a single character, and
+    anything that strips it leaves a binding that still parses, still lints,
+    and draws nothing at all. The glyph test cannot see it either, since it
+    only checks the glyphs that are present. Nothing here ever wants an empty
+    icon, so an empty one is a lost one.
+    """
+    problems = []
+    for number, line in enumerate(path.read_text(encoding='utf-8').split('\n'), start=1):
+        # Comments only: `strip` blanks every string literal, which is exactly
+        # what this check must not do.
+        code = LINE_COMMENT.sub('', line)
+        if re.search(r'\biconText\s*:\s*""(?!\s*\+)', code):
+            problems.append('%s:%d: `iconText` is bound to the empty string, which is how a '
+                            'literal glyph goes missing' % (path.name, number))
+        if re.match(r'\s*text\s*:\s*""\s*$', code):
+            problems.append('%s:%d: `text` is bound to the empty string, which is how a '
+                            'literal glyph goes missing' % (path.name, number))
+    return problems
+
+
 def duplicate_js_functions(path):
     """A function defined twice in one .js file.
 
@@ -179,6 +204,7 @@ def main():
         problems += shadowed_members(path)
         problems += latched_visibility(path)
         problems += model_functions_exist(path, ROOT / 'Model.js')
+        problems += lost_glyphs(path)
     for path in sorted(ROOT.glob('*.js')):
         problems += duplicate_js_functions(path)
     if problems:

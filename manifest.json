@@ -25,7 +25,7 @@
   "settings": {
     "path": "~/.local/state/omarchy/control-centre.json",
     "note": "Edited from the gear in the card header. Documented here for humans; the shell does not read this key.",
-    "tiles": "ordered array of { id, enabled } over wifi, bluetooth, dnd, nightlight, stayawake, mic, recording, volume, brightness, power, media, actions",
+    "tiles": "ordered array of { id, enabled }; the catalogue and each control's shipped default live in Model.js, and an id missing from this file takes that default",
     "position": "bar-end or centre",
     "reduceMotion": "boolean, disables every animation",
     "barWidget": "boolean, whether the launcher pill renders in the bar",

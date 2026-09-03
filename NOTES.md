@@ -140,6 +140,56 @@ Checked against the Omarchy 4.0.1 defaults with `hyprctl -j binds`:
 `SUPER + CTRL + C` is the Capture menu, and `SUPER + I` in the default set is
 "Toggle locking on idle" under `SUPER + CTRL`. `SUPER + BACKSLASH` was free.
 
+## The toggle flags
+
+Everything the Omarchy menu calls a trigger toggle is a flag file, and the
+file existing is the state:
+
+| Flag | Path under `~/.local/state/omarchy/` |
+|---|---|
+| Menu bar hidden | `toggles/bar-off` |
+| Screensaver disabled | `toggles/screensaver-off` |
+| Crash capture disabled | `toggles/crash-capture-off` |
+| Suspend hidden from the menu | `toggles/suspend-off` |
+| Window gaps removed | `toggles/hypr/window-no-gaps.lua` |
+| Square single-window ratio | `toggles/hypr/single-window-aspect-ratio.lua` |
+| Touchpad or touchscreen off | `toggles/hypr/<kind>-disabled-name`, non-empty |
+
+The names carry the sense the file has, which is the opposite of the sense
+most of the tiles show: `bar-off` present means the Menu Bar tile is off. The
+inversion lives in one place, next to the flag reader.
+
+The workspace layout is not a flag: `hyprctl activeworkspace -j` reports
+`tiledLayout` as `dwindle` or `scrolling`, and the toggle writes a per
+workspace rule. The internal display and its mirror come from
+`omarchy-monitor-state`, which the brightness tile already reads.
+
+`probe.sh` gathers all of it in one child rather than a dozen, split into a
+`state` half that runs on the open timer and a `static` half for what cannot
+change mid-session: which parts the machine has, which optional tools are
+installed, and the theme directory names. `omarchy-theme-set` accepts either
+the display name or the directory name, so the card passes the directory name
+and never has to map a label back.
+
+## Glyphs go missing, silently
+
+Every glyph is embedded as a literal character, because a JavaScript escape
+takes four hex digits and a Nerd Font codepoint takes five. That makes a
+glyph easy to lose in transit: what is left is a binding to the empty string,
+which parses, lints, passes the glyph test (it only checks glyphs that are
+present) and draws nothing. It happened once here, to the theme tile.
+
+`tests/test_qml_structure.py` now fails on any icon bound to an empty string,
+which is never intentional in this plugin. Worth knowing if you add a
+component: the same test's `strip()` helper blanks every string literal for
+the duplicate-binding scan, so a check about string *contents* has to read the
+raw line instead. Getting that wrong makes the check flag every glyph in the
+plugin, which is how this one was first written.
+
+Coverage in the font is not the same as ink on the screen. `fc-list
+:charset=<cp>` says a font claims the codepoint; rendering the character and
+measuring the mean pixel value says it actually paints something.
+
 ## Motion
 
 The card's resting position is derived from its own width and height: it is

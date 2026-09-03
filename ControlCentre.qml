@@ -84,7 +84,7 @@ Item {
     root.bindServices()
     root.editing = false
     root.status = ""
-    root.sleepArmed = false
+    root.armedId = ""
     root.tileErrors = ({})
     root.applyPayload(payloadJson)
     // Re-read on every open, not only at load, so a settings file edited or
@@ -104,7 +104,7 @@ Item {
   function close() {
     root.opened = false
     root.editing = false
-    root.sleepArmed = false
+    root.armedId = ""
   }
 
   function dismiss() {
@@ -350,6 +350,7 @@ Item {
   readonly property real outputVolume: volumeSink && volumeSink.audio ? volumeSink.audio.volume : 0
   readonly property bool outputMuted: volumeSink && volumeSink.audio ? volumeSink.audio.muted : false
   readonly property bool inputMuted: source && source.audio ? source.audio.muted : true
+  readonly property real inputVolume: source && source.audio ? source.audio.volume : 0
   readonly property bool micInUse: {
     if (root.inputMuted) return false
     for (var i = 0; i < captureStreams.length; i++) {
@@ -449,6 +450,227 @@ Item {
     }
   }
 
+  // ------------------------------------------------- flags, hardware, themes
+
+  // Everything QML cannot read for itself, gathered by one child rather than
+  // a dozen. `flags` is re-read on the open timer; `hardware` and the theme
+  // list are read once per card, since a desktop does not grow a touchscreen
+  // while the card is up.
+  property var flags: ({})
+  property var hardware: ({})
+  property var themes: []
+  property string currentTheme: ""
+  property bool hardwareLoaded: false
+
+  function parseProbe(raw, limit) {
+    var out = {}
+    var lines = String(raw || "").split("\n")
+    for (var i = 0; i < lines.length && i < limit; i++) {
+      var idx = lines[i].indexOf("\t")
+      if (idx <= 0) continue
+      var key = lines[i].substring(0, idx)
+      if (!/^[a-z][a-z0-9._-]{0,48}$/.test(key)) continue
+      out[key] = lines[i].substring(idx + 1).trim().slice(0, 64)
+    }
+    return out
+  }
+
+  Child {
+    id: stateProbe
+    command: [root.pluginDir + "/probe.sh", "state"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var next = root.parseProbe(text, 64)
+        root.flags = next
+        root.currentTheme = /^[a-z0-9][a-z0-9-]{0,63}$/.test(next["theme.current"] || "")
+          ? next["theme.current"] : ""
+        root.reconcileFlags()
+        if (root.pending.theme !== undefined && root.pending.theme === root.currentTheme) root.clearPending("theme")
+      }
+    }
+  }
+
+  Child {
+    id: staticProbe
+    command: [root.pluginDir + "/probe.sh", "static"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var lines = String(text || "").split("\n")
+        var hw = {}
+        var list = []
+        for (var i = 0; i < lines.length && i < 80; i++) {
+          var idx = lines[i].indexOf("\t")
+          if (idx <= 0) continue
+          var key = lines[i].substring(0, idx)
+          var value = lines[i].substring(idx + 1).trim().slice(0, 64)
+          if (key === "theme.available") {
+            if (/^[a-z0-9][a-z0-9-]{0,63}$/.test(value) && list.length < 40) list.push(value)
+          } else if (/^(hw|has)\.[a-z0-9.-]{1,48}$/.test(key)) {
+            hw[key] = value
+          }
+        }
+        root.hardware = hw
+        root.themes = list
+        root.hardwareLoaded = true
+      }
+    }
+  }
+
+  // The tiles below are all "a flag file exists or it does not". The flag
+  // names carry the sense the file has (`bar-off`), which is the opposite of
+  // the sense the tile shows, so the inversion lives here in one place.
+  function flagOn(name) { return root.flags["flag." + name] === "on" }
+  function hyprFlagOn(name) { return root.flags["hypr." + name] === "on" }
+  // Core Omarchy commands are assumed present until the probe says otherwise,
+  // so the usual case never shows a card that grows a beat after it opens.
+  // Hardware is the other way round: claiming a touchscreen that is not there
+  // is worse than showing its tile a moment late.
+  function hasTool(name) {
+    if (!root.hardwareLoaded) return true
+    return root.hardware["has." + name] === "yes"
+  }
+  function hasPart(name) { return root.hardware["hw." + name] === "yes" }
+
+  function pluginAvailable(id) {
+    var registry = root.shell ? root.shell.pluginRegistry : null
+    if (!registry || !registry.installedPlugins) return false
+    return !!registry.installedPlugins[id] && registry.isEnabled(id)
+  }
+
+  readonly property bool barShown: !root.flagOn("bar-off")
+  readonly property bool screensaverEnabled: !root.flagOn("screensaver-off")
+  readonly property bool crashCaptureEnabled: !root.flagOn("crash-capture-off")
+  readonly property bool gapsOn: !root.hyprFlagOn("window-no-gaps")
+  readonly property bool squareRatioOn: root.hyprFlagOn("single-window-aspect-ratio")
+  readonly property bool touchpadOn: root.flags["input.touchpad"] !== "off"
+  readonly property bool touchscreenOn: root.flags["input.touchscreen"] !== "off"
+  readonly property bool scrollingLayout: root.flags["workspace.layout"] === "scrolling"
+
+  // Each of these is what its tile shows, so reconciliation is one table.
+  function flagState(id) {
+    if (id === "bar") return root.barShown
+    if (id === "screensaver") return root.screensaverEnabled
+    if (id === "crashcapture") return root.crashCaptureEnabled
+    if (id === "gaps") return root.gapsOn
+    if (id === "ratio") return root.squareRatioOn
+    if (id === "touchpad") return root.touchpadOn
+    if (id === "touchscreen") return root.touchscreenOn
+    if (id === "layout") return root.scrollingLayout
+    if (id === "laptopdisplay") return root.internalEnabled
+    if (id === "mirror") return root.mirrorEnabled
+    return false
+  }
+
+  readonly property var flagTiles: ["bar", "screensaver", "crashcapture", "gaps", "ratio",
+                                    "touchpad", "touchscreen", "layout", "laptopdisplay", "mirror"]
+
+  function reconcileFlags() {
+    for (var i = 0; i < root.flagTiles.length; i++) {
+      var id = root.flagTiles[i]
+      if (root.pending[id] !== undefined && root.pending[id] === root.flagState(id)) root.clearPending(id)
+    }
+  }
+
+  // One command per flag tile, each a fixed vector.
+  function flagCommand(id) {
+    if (id === "bar") return ["omarchy-toggle-bar"]
+    if (id === "screensaver") return ["omarchy-toggle-screensaver"]
+    if (id === "crashcapture") return ["omarchy-toggle-crash-capture"]
+    if (id === "gaps") return ["omarchy-hyprland-window-gaps-toggle"]
+    if (id === "ratio") return ["omarchy-hyprland-window-single-square-aspect-toggle"]
+    if (id === "layout") return ["omarchy-hyprland-workspace-layout-toggle"]
+    if (id === "touchpad") return ["omarchy-toggle-touchpad"]
+    if (id === "touchscreen") return ["omarchy-toggle-touchscreen"]
+    if (id === "laptopdisplay") return ["omarchy-hyprland-monitor-internal", "toggle"]
+    if (id === "mirror") return ["omarchy-hyprland-monitor-internal-mirror", "toggle"]
+    return null
+  }
+
+  function toggleFlag(id) {
+    var argv = root.flagCommand(id)
+    if (!argv || flagProc.running) return
+    root.beginPending(id, !root.flagState(id), "That switch did not take")
+    flagProc.command = argv
+    flagProc.running = true
+  }
+
+  Child {
+    id: flagProc
+    stdout: StdioCollector { waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        for (var i = 0; i < root.flagTiles.length; i++) {
+          var id = root.flagTiles[i]
+          if (root.pending[id] !== undefined) root.failPending(id, "That switch did not take")
+        }
+      }
+      if (!stateProbe.running) stateProbe.running = true
+      if (!monitorProbe.running) monitorProbe.running = true
+    }
+  }
+
+  // --------------------------------------------------------------- warmth
+
+  // The night light service owns the temperature; this tile is a second way
+  // to set it, alongside the on/off the indicator gives. Warmer to the right,
+  // which is the direction the word points.
+  readonly property int warmthCoolest: 6500
+  readonly property int warmthWarmest: 2500
+  readonly property int warmthTemperature: {
+    var t = root.nightlightService ? Number(root.nightlightService.temperature) : NaN
+    if (!isFinite(t) || t <= 0) return root.warmthCoolest
+    return Math.max(root.warmthWarmest, Math.min(root.warmthCoolest, Math.round(t)))
+  }
+  property int warmthPreview: 0
+  readonly property int warmthShown: root.warmthPreview > 0 ? root.warmthPreview : root.warmthTemperature
+  readonly property real warmthValue: (root.warmthCoolest - root.warmthShown) / (root.warmthCoolest - root.warmthWarmest)
+
+  function warmthFromValue(v) {
+    var span = root.warmthCoolest - root.warmthWarmest
+    return Math.max(root.warmthWarmest, Math.min(root.warmthCoolest,
+      Math.round(root.warmthCoolest - Math.max(0, Math.min(1, v)) * span)))
+  }
+
+  function previewWarmth(v) {
+    root.warmthPreview = root.warmthFromValue(v)
+    warmthDebounce.restart()
+  }
+
+  function commitWarmth() {
+    if (!root.nightlightService || root.warmthPreview <= 0) return
+    root.nightlightService.applyTemperature(root.warmthPreview)
+  }
+
+  Timer {
+    id: warmthDebounce
+    interval: 180
+    repeat: false
+    onTriggered: root.commitWarmth()
+  }
+
+  // ---------------------------------------------------------------- themes
+
+  function setTheme(name) {
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(String(name)) || root.themes.indexOf(name) < 0) return
+    if (themeProc.running) return
+    // A theme change rewrites config across the system and asks the shell to
+    // reload; it is not a switch that answers in a moment.
+    root.beginPending("theme", name, "Could not switch theme", 20000)
+    themeProc.command = ["omarchy-theme-set", String(name)]
+    themeProc.running = true
+  }
+
+  Child {
+    id: themeProc
+    stdout: StdioCollector { waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) root.failPending("theme", "Could not switch theme")
+      if (!stateProbe.running) stateProbe.running = true
+    }
+  }
+
   // ------------------------------------------------------------ brightness
 
   property bool brightnessAvailable: false
@@ -456,6 +678,9 @@ Item {
   property int pendingBrightnessPercent: 0
   property bool brightnessSetQueued: false
   property string focusedMonitor: ""
+  property string internalMonitorName: ""
+  property bool internalEnabled: false
+  property bool mirrorEnabled: false
 
   Child {
     id: monitorProbe
@@ -466,6 +691,9 @@ Item {
         var lines = String(text || "").split("\n")
         var brightness = String(lines[0] || "").trim()
         var available = brightness !== "unavailable" && /^\d{1,3}$/.test(brightness)
+        root.internalMonitorName = String(lines[1] || "").trim()
+        root.internalEnabled = String(lines[3] || "").trim() !== ""
+        root.mirrorEnabled = String(lines[4] || "").trim() !== "" && String(lines[2] || "").trim() !== ""
         var monitor = String(lines[5] || "").trim()
         root.focusedMonitor = Model.isMonitorName(monitor) ? monitor : ""
         root.brightnessAvailable = available && root.focusedMonitor !== ""
@@ -641,10 +869,19 @@ Item {
   property var pendingMessages: ({})
   property var tileErrors: ({})
 
-  function beginPending(id, want, message) {
+  // `patience` is how long to wait for the system to agree before giving up
+  // on it. Most switches answer in well under a second; a theme change
+  // rewrites every config on disk and tells the shell to reload, so it gets
+  // an order of magnitude more room before the card calls it a failure.
+  property var pendingPatience: ({})
+
+  function beginPending(id, want, message, patience) {
     var next = ({}); for (var k in pending) next[k] = pending[k]; next[id] = want; pending = next
     var since = ({}); for (var s in pendingSince) since[s] = pendingSince[s]; since[id] = Date.now(); pendingSince = since
     var msgs = ({}); for (var m in pendingMessages) msgs[m] = pendingMessages[m]; msgs[id] = message; pendingMessages = msgs
+    var wait = ({}); for (var w in pendingPatience) wait[w] = pendingPatience[w]
+    wait[id] = Number(patience) > 0 ? Number(patience) : 3000
+    pendingPatience = wait
     root.setTileError(id, "")
   }
 
@@ -668,7 +905,8 @@ Item {
   function reconcile() {
     var now = Date.now()
     for (var id in pending) {
-      if (now - (pendingSince[id] || now) > 3000) root.failPending(id, pendingMessages[id] || "No response")
+      var patience = root.pendingPatience[id] || 3000
+      if (now - (pendingSince[id] || now) > patience) root.failPending(id, pendingMessages[id] || "No response")
     }
   }
 
@@ -678,6 +916,19 @@ Item {
     repeat: true
     running: root.opened && Object.keys(root.pending).length > 0
     onTriggered: root.reconcile()
+  }
+
+  // While something is in flight, ask the system more often than the idle
+  // five seconds, so an optimistic tile settles as soon as it is true rather
+  // than at the next tick.
+  Timer {
+    interval: 700
+    repeat: true
+    running: root.opened && Object.keys(root.pending).length > 0
+    onTriggered: {
+      if (!stateProbe.running) stateProbe.running = true
+      if (!recordingProbe.running) recordingProbe.running = true
+    }
   }
 
   Timer {
@@ -693,6 +944,7 @@ Item {
   function refreshAll() {
     root.refreshFast()
     root.refreshSlow()
+    if (!root.hardwareLoaded && !staticProbe.running) staticProbe.running = true
     if (!suspendProbe.running) suspendProbe.running = true
     if (!sinkAvailabilityProbe.running) sinkAvailabilityProbe.running = true
     root.resolveVolumeSink()
@@ -704,6 +956,7 @@ Item {
   }
 
   function refreshSlow() {
+    if (!stateProbe.running) stateProbe.running = true
     if (!monitorProbe.running) monitorProbe.running = true
     if (!profilesProbe.running) profilesProbe.running = true
     if (root.batteryPresent && !batteryProbe.running) batteryProbe.running = true
@@ -796,11 +1049,37 @@ Item {
     stayawake: root.idleService !== null,
     mic: root.source !== null,
     recording: true,
+    screenshot: root.hasTool("omarchy-capture-screenshot"),
+    colour: root.hasTool("hyprpicker"),
+    text: root.hasTool("omarchy-capture-text"),
+    qr: root.hasTool("omarchy-capture-qr"),
+    emoji: root.pluginAvailable("omarchy.emojis"),
+    clipboard: root.pluginAvailable("omarchy.clipboard"),
+    reminder: root.hasTool("omarchy-reminder"),
+    share: root.hasTool("omarchy-menu-share"),
+    transcode: root.hasTool("omarchy-transcode"),
+    netspeed: root.pluginAvailable("omarchy.speedtest"),
+    diskspeed: root.pluginAvailable("omarchy.disk-speedtest"),
+    bar: true,
+    gaps: true,
+    ratio: true,
+    layout: root.flags["workspace.layout"] !== undefined && root.flags["workspace.layout"] !== "unknown",
+    screensaver: true,
+    crashcapture: true,
+    touchpad: root.hasPart("touchpad"),
+    touchscreen: root.hasPart("touchscreen"),
+    laptopdisplay: root.hasPart("laptop"),
+    mirror: root.hasPart("laptop") && root.internalMonitorName !== "",
+    hybridgpu: root.hasPart("hybrid-gpu"),
     volume: root.sink !== null,
+    miclevel: root.source !== null,
     brightness: root.brightnessAvailable,
+    warmth: root.nightlightService !== null,
+    theme: root.themes.length > 1,
     power: root.profiles.length > 0 || root.batteryPresent,
     media: root.hasMedia,
-    actions: true
+    actions: true,
+    session: true
   })
 
   readonly property var gridIds: Model.gridIds(root.settings, root.available, root.editing)
@@ -808,11 +1087,19 @@ Item {
   readonly property int gap: Style.spacing.lg
   readonly property var tileHeights: ({
     toggle: Style.space(74),
+    action: Style.space(74),
     slider: Style.space(62),
+    warmth: Style.space(62),
     power: Style.space(66),
     media: Style.space(76),
     actions: Style.space(46),
-    option: Style.space(44)
+    session: Style.space(46),
+    // The chips wrap, so the row grows with however many themes exist. Edit
+    // mode does not draw them, so there it collapses to a label.
+    theme: root.editing ? Style.space(44)
+      : Style.space(46) + Math.ceil(Math.max(1, root.themes.length) / 4) * Style.space(26),
+    option: Style.space(44),
+    header: Style.space(22)
   })
   readonly property var grid: Model.layout(root.gridIds, root.cellWidth, root.gap, root.tileHeights)
 
@@ -845,6 +1132,9 @@ Item {
       root.subCursor = index >= 0 ? index : 0
     } else if (kind === "media") {
       root.subCursor = 1
+    } else if (kind === "theme") {
+      var themeIndex = root.themes.indexOf(root.currentTheme)
+      root.subCursor = themeIndex >= 0 ? themeIndex : 0
     } else {
       root.subCursor = 0
     }
@@ -853,6 +1143,14 @@ Item {
   onCursorChanged: {
     root.resetSubCursor()
     root.pinnedId = root.idAt(root.cursor)
+    root.revealCursor()
+  }
+
+  // Set by the card once its Flickable exists, so the model side can ask for
+  // the cursor to be brought into view without reaching into the surface.
+  property var revealFn: null
+  function revealCursor() {
+    if (root.revealFn) root.revealFn(root.cursor)
   }
 
   // Whether the stock panel a chevron would open is actually live in the
@@ -897,31 +1195,55 @@ Item {
 
   // ---------------------------------------------------------------- actions
 
-  property bool sleepArmed: false
-  Timer { id: sleepTimer; interval: 2000; onTriggered: root.sleepArmed = false }
+  // Anything that ends the session or the machine asks twice: the button
+  // arms on the first press and says so, and only a second press within two
+  // seconds goes through.
+  readonly property var destructive: ["sleep", "hibernate", "logout", "reboot", "shutdown"]
+  property string armedId: ""
+  Timer { id: armTimer; interval: 2000; onTriggered: root.armedId = "" }
+
+  function isDestructive(id) { return root.destructive.indexOf(String(id)) !== -1 }
 
   readonly property var actionRow: {
     var list = [{ id: "lock", glyph: "󰌾", label: "Lock", armed: false }]
-    if (!root.suspendHidden) list.push({ id: "sleep", glyph: "󰒲", label: "Sleep", armed: root.sleepArmed })
+    if (!root.suspendHidden) list.push({ id: "sleep", glyph: "󰒲", label: "Sleep", armed: root.armedId === "sleep" })
     list.push({ id: "screensaver", glyph: "󱄄", label: "Screensaver", armed: false })
     return list
   }
 
+  readonly property var sessionRow: {
+    var list = []
+    if (root.hasPart("hibernate")) list.push({ id: "hibernate", glyph: "󰤁", label: "Hibernate", armed: root.armedId === "hibernate" })
+    list.push({ id: "logout", glyph: "󰍃", label: "Log Out", armed: root.armedId === "logout" })
+    list.push({ id: "reboot", glyph: "󰜉", label: "Restart", armed: root.armedId === "reboot" })
+    list.push({ id: "shutdown", glyph: "󰐥", label: "Shut Down", armed: root.armedId === "shutdown" })
+    return list
+  }
+
   function runAction(id) {
-    if (id === "sleep") {
-      if (!root.sleepArmed) {
-        root.sleepArmed = true
-        sleepTimer.restart()
-        return
-      }
-      root.sleepArmed = false
-      root.dismiss()
-      root.runDetached(["systemctl", "suspend"])
+    var argv = Model.actionCommand(id)
+    if (!argv) return
+    if (root.isDestructive(id) && root.armedId !== id) {
+      root.armedId = id
+      armTimer.restart()
       return
     }
+    root.armedId = ""
     root.dismiss()
-    if (id === "lock") root.runDetached(["omarchy-system-lock"])
-    else if (id === "screensaver") root.runDetached(["omarchy-launch-screensaver", "force"])
+    root.runDetached(argv)
+  }
+
+  // A one-shot tile. Anything the shell already hosts is summoned rather than
+  // run, which costs no child process and does not depend on PATH.
+  function runTile(id) {
+    var plugin = Model.actionSummon(id)
+    if (plugin) {
+      if (!root.pluginAvailable(plugin)) return
+      root.dismiss()
+      Qt.callLater(function() { root.shell.summon(plugin, "{}") })
+      return
+    }
+    root.runAction(id)
   }
 
   function activateToggle(id) {
@@ -933,6 +1255,7 @@ Item {
     else if (id === "stayawake" && root.idleService) root.idleService.setIdleEnabled(root.stayAwake)
     else if (id === "mic") root.toggleInputMute()
     else if (id === "recording") root.toggleRecording()
+    else if (root.flagTiles.indexOf(id) !== -1) root.toggleFlag(id)
   }
 
   function mediaAction(action) {
@@ -942,12 +1265,20 @@ Item {
 
   function sliderValue(id) {
     if (id === "volume") return root.outputVolume
+    if (id === "miclevel") return root.inputVolume
+    if (id === "warmth") return root.warmthValue
     if (id === "brightness") return root.brightnessPercent / 100
     return 0
   }
 
+  function setInputVolume(v) {
+    if (root.source && root.source.audio) root.source.audio.volume = Math.max(0, Math.min(1, v))
+  }
+
   function nudgeSlider(id, steps) {
     if (id === "volume") root.setOutputVolume(Math.max(0, Math.min(1, root.outputVolume + steps * 0.05)))
+    else if (id === "miclevel") root.setInputVolume(Math.max(0, Math.min(1, root.inputVolume + steps * 0.05)))
+    else if (id === "warmth") { root.previewWarmth(Math.max(0, Math.min(1, root.warmthValue + steps * 0.05))); root.commitWarmth() }
     else if (id === "brightness") root.setBrightness(root.brightnessPercent + steps * 5)
   }
 
@@ -962,7 +1293,14 @@ Item {
       return
     }
     if (kind === "toggle") root.activateToggle(id)
-    else if (kind === "slider") { if (id === "volume") root.toggleOutputMute() }
+    else if (kind === "action") root.runTile(id)
+    else if (kind === "session") { var e = root.sessionRow[Math.max(0, Math.min(root.sessionRow.length - 1, root.subCursor))]; if (e) root.runAction(e.id) }
+    else if (kind === "theme") { if (root.subCursor >= 0 && root.subCursor < root.themes.length) root.setTheme(root.themes[root.subCursor]) }
+    else if (kind === "slider" || kind === "warmth") {
+      if (id === "volume") root.toggleOutputMute()
+      else if (id === "miclevel") root.toggleInputMute()
+      else if (id === "warmth" && root.nightlightService) root.nightlightService.setNightlight(!root.nightlight)
+    }
     else if (kind === "power") { if (root.subCursor >= 0 && root.subCursor < root.profiles.length) root.setProfile(root.profiles[root.subCursor]) }
     else if (kind === "media") root.mediaAction(["previous", "playPause", "next"][Math.max(0, Math.min(2, root.subCursor))])
     else if (kind === "actions") { var a = root.actionRow[Math.max(0, Math.min(root.actionRow.length - 1, root.subCursor))]; if (a) root.runAction(a.id) }
@@ -984,10 +1322,12 @@ Item {
   }
 
   function subCount() {
-    var kind = root.cursorKind
+    var kind = Model.kindOf(root.idAt(root.cursor))
     if (kind === "power") return root.profiles.length
     if (kind === "media") return 3
     if (kind === "actions") return root.actionRow.length
+    if (kind === "session") return root.sessionRow.length
+    if (kind === "theme") return root.themes.length
     return 0
   }
 
@@ -1028,7 +1368,7 @@ Item {
     var left = key === Qt.Key_Left || text === "h" || key === Qt.Key_Minus || text === "-"
     if (right || left) {
       var direction = right ? 1 : -1
-      if (kind === "slider" && !root.editing) root.nudgeSlider(root.cursorId, direction * (shift ? 5 : 1))
+      if ((kind === "slider" || kind === "warmth") && !root.editing) root.nudgeSlider(root.idAt(root.cursor), direction * (shift ? 5 : 1))
       else if (root.subCount() > 0 && !root.editing) root.subCursor = Math.max(0, Math.min(root.subCount() - 1, root.subCursor + direction))
       else if (key === Qt.Key_Left || key === Qt.Key_Right || text === "h" || text === "l") root.cursor = Model.moveCursor(root.grid.cells, root.cursor, direction, 0)
       return
@@ -1071,6 +1411,7 @@ Item {
         micMuted: root.inputMuted, micInUse: root.micInUse, recording: root.recording, recordingElapsed: root.recordingElapsed,
         volume: root.outputVolume, muted: root.outputMuted, sink: root.nodeLabel(root.sink), volumeSink: root.volumeSinkName,
         brightness: root.brightnessPercent, brightnessAvailable: root.brightnessAvailable, monitor: root.focusedMonitor,
+        flags: root.flags, hardware: root.hardware, themes: root.themes, theme: root.currentTheme,
         profiles: root.profiles, activeProfile: root.activeProfile, battery: root.batteryPresent, batteryFraction: root.batteryFraction,
         onBattery: root.onBattery, media: root.hasMedia, suspendHidden: root.suspendHidden
       }
@@ -1195,8 +1536,52 @@ Item {
       info.subtitle = rec ? (root.recordingElapsed >= 0 ? Model.formatElapsed(root.recordingElapsed) : "Recording") : "Off"
       info.tooltip = rec ? "Stop recording" : "Start a screen recording"
     }
+    else if (root.flagTiles.indexOf(id) !== -1) {
+      var state = root.pending[id] !== undefined ? root.pending[id] : root.flagState(id)
+      info.active = state
+      info.busy = root.pending[id] !== undefined
+      info.glyph = Model.glyphOf(id)
+      if (id === "layout") info.subtitle = state ? "Scrolling" : "Dwindle"
+      else if (id === "laptopdisplay") info.subtitle = state ? "On" : "Off"
+      else info.subtitle = state ? "On" : "Off"
+      info.tooltip = root.flagTooltip(id, state)
+    } else if (Model.kindOf(id) === "action") {
+      info.glyph = Model.glyphOf(id)
+      info.subtitle = ""
+      info.tooltip = root.actionTooltip(id)
+    }
     if (editing) info.tooltip = Model.tileEnabled(root.settings, id) ? "Enter hides this tile" : "Enter shows this tile"
     return info
+  }
+
+  function flagTooltip(id, state) {
+    if (id === "bar") return state ? "Hide the menu bar" : "Show the menu bar"
+    if (id === "gaps") return state ? "Remove the gaps between windows" : "Put the gaps back"
+    if (id === "ratio") return state ? "Stop squaring a lone window" : "Square a lone window"
+    if (id === "layout") return state ? "Switch this workspace back to dwindle" : "Switch this workspace to scrolling"
+    if (id === "screensaver") return state ? "Stop the screensaver running on idle" : "Let the screensaver run on idle"
+    if (id === "crashcapture") return state ? "Stop capturing crashes" : "Capture crashes"
+    if (id === "touchpad") return state ? "Disable the touchpad" : "Enable the touchpad"
+    if (id === "touchscreen") return state ? "Disable the touchscreen" : "Enable the touchscreen"
+    if (id === "laptopdisplay") return state ? "Turn the laptop screen off" : "Turn the laptop screen on"
+    if (id === "mirror") return state ? "Stop mirroring the laptop screen" : "Mirror the laptop screen"
+    return ""
+  }
+
+  function actionTooltip(id) {
+    if (id === "screenshot") return "Pick a region to capture"
+    if (id === "colour") return "Pick a colour from the screen"
+    if (id === "text") return "Grab text out of the screen"
+    if (id === "qr") return "Read a QR code off the screen"
+    if (id === "emoji") return "Emoji picker"
+    if (id === "clipboard") return "Clipboard history"
+    if (id === "reminder") return "Set a reminder"
+    if (id === "share") return "Send a file to another machine"
+    if (id === "transcode") return "Transcode a video"
+    if (id === "netspeed") return "Run a network speed test"
+    if (id === "diskspeed") return "Run a disk speed test"
+    if (id === "hybridgpu") return "Switch the hybrid GPU mode, in a terminal"
+    return ""
   }
 
   PointerMoveGate {
@@ -1230,8 +1615,14 @@ Item {
     }
 
     readonly property int cardWidth: root.contentWidth + root.padding * 2 + Border.left(root.borderSpec) + Border.right(root.borderSpec)
-    readonly property int cardHeight: Math.min(panel.height - Style.gapsOut * 2 - (root.barHidden ? 0 : root.barSize),
-      content.implicitHeight + root.padding * 2 + Border.top(root.borderSpec) + Border.bottom(root.borderSpec))
+    readonly property int chromeHeight: chrome.implicitHeight + Style.spacing.lg
+      + (statusText.visible ? statusText.implicitHeight + Style.spacing.md : 0)
+    readonly property int cardInsets: root.padding * 2 + Border.top(root.borderSpec) + Border.bottom(root.borderSpec)
+    // As tall as the content wants, until the screen says otherwise. Past
+    // that the grid scrolls rather than being cut off.
+    readonly property int cardHeight: Math.min(
+      panel.height - Style.gapsOut * 2 - (root.barHidden ? 0 : root.barSize),
+      panel.chromeHeight + root.grid.height + panel.cardInsets)
     readonly property bool centred: root.settings.position === "centre"
     // Opened from the pill, the card centres on that icon and is clamped to
     // the screen, which is what every stock bar panel does. Opened by key it
@@ -1313,65 +1704,104 @@ Item {
           event.accepted = true
         }
 
-        Column {
+        // The card is a fixed head and foot with a scrolling middle: a
+        // catalogue this long will not fit a laptop screen, and a grid that
+        // silently clipped its last rows would be worse than one that scrolls.
+        Item {
           id: content
-          width: parent.width
-          spacing: Style.spacing.lg
+          anchors.fill: parent
 
-          // ---------- header ----------
-          Item {
-            width: parent.width
-            height: root.headerHeight
 
-            Text {
-              anchors.left: parent.left
-              anchors.verticalCenter: parent.verticalCenter
-              text: root.editing ? "Edit tiles" : "Control Centre"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              font.bold: true
+          Column {
+            id: chrome
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            spacing: Style.spacing.lg
+
+            // ---------- header ----------
+            Item {
+              width: parent.width
+              height: root.headerHeight
+
+              Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.editing ? "Edit tiles" : "Control Centre"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+              }
+
+              Text {
+                anchors.right: gear.left
+                anchors.rightMargin: Style.spacing.md
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.editing
+                text: "Enter shows or hides · Ctrl+arrows reorder"
+                color: Qt.darker(root.foreground, 1.5)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              PanelActionButton {
+                id: gear
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                iconText: root.editing ? "󰄬" : "󰒓"
+                tooltipText: root.editing ? "Done" : "Edit tiles and settings"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onClicked: root.setEditing(!root.editing)
+              }
             }
 
+            // ---------- first-run hint ----------
             Text {
-              anchors.right: gear.left
-              anchors.rightMargin: Style.spacing.md
-              anchors.verticalCenter: parent.verticalCenter
-              visible: root.editing
-              text: "Enter shows or hides · Ctrl+arrows reorder"
-              color: Qt.darker(root.foreground, 1.5)
+              width: parent.width
+              visible: root.hintVisible && !root.editing
+              text: Model.hintText()
+              color: Qt.darker(root.foreground, 1.4)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
-            }
-
-            PanelActionButton {
-              id: gear
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              iconText: root.editing ? "󰄬" : "󰒓"
-              tooltipText: root.editing ? "Done" : "Edit tiles and settings"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              onClicked: root.setEditing(!root.editing)
+              wrapMode: Text.WordWrap
             }
           }
 
-          // ---------- first-run hint ----------
-          Text {
-            width: parent.width
-            visible: root.hintVisible && !root.editing
-            text: Model.hintText()
-            color: Qt.darker(root.foreground, 1.4)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
+          Flickable {
+            id: scroller
+            anchors.top: chrome.bottom
+            anchors.topMargin: Style.spacing.lg
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: statusText.visible ? statusText.top : parent.bottom
+            anchors.bottomMargin: statusText.visible ? Style.spacing.md : 0
+            contentWidth: width
+            contentHeight: root.grid.height
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            flickDeceleration: 6000
 
-          // ---------- grid ----------
-          Item {
-            id: gridItem
-            width: parent.width
-            height: root.grid.height
+            // Keeps the cursor on screen when the keyboard walks off the
+            // visible part of a long catalogue.
+            Component.onCompleted: root.revealFn = scroller.revealCell
+            onHeightChanged: Qt.callLater(function() { scroller.revealCell(root.cursor) })
+
+            function revealCell(index) {
+              var cells = root.grid.cells
+              if (index < 0 || index >= cells.length) return
+              var cell = cells[index]
+              if (cell.y < contentY) contentY = cell.y
+              else if (cell.y + cell.height > contentY + height)
+                contentY = Math.min(Math.max(0, contentHeight - height), cell.y + cell.height - height)
+            }
+
+            Item {
+              id: gridItem
+              width: scroller.width
+              height: root.grid.height
 
             Repeater {
               model: root.gridIds
@@ -1389,11 +1819,13 @@ Item {
                 width: geometry ? geometry.width : 0
                 height: geometry ? geometry.height : 0
 
-                sourceComponent: kind === "toggle" ? toggleComp
-                  : kind === "slider" ? sliderComp
+                sourceComponent: kind === "toggle" || kind === "action" ? toggleComp
+                  : kind === "slider" || kind === "warmth" ? sliderComp
                   : kind === "power" ? powerComp
                   : kind === "media" ? mediaComp
-                  : kind === "actions" ? actionsComp
+                  : kind === "actions" || kind === "session" ? actionsComp
+                  : kind === "theme" ? themeComp
+                  : kind === "header" ? headerComp
                   : optionComp
 
                 Component {
@@ -1429,16 +1861,26 @@ Item {
                 Component {
                   id: sliderComp
                   SliderTile {
-                    readonly property bool isVolume: cell.modelData === "volume"
+                    readonly property string sliderId: cell.modelData
+                    readonly property bool isVolume: sliderId === "volume"
+                    readonly property bool isMic: sliderId === "miclevel"
+                    readonly property bool isWarmth: sliderId === "warmth"
                     anchors.fill: parent
-                    label: isVolume ? "Volume" : "Brightness"
-                    glyph: isVolume ? Model.volumeGlyph(root.outputVolume, root.outputMuted, root.isHeadphones(root.sink)) : "󰃠"
-                    glyphTooltip: isVolume ? (root.outputMuted ? "Unmute" : "Mute") : ""
-                    value: root.sliderValue(cell.modelData)
-                    minimum: isVolume ? 0 : 0.01
+                    label: Model.labelOf(sliderId)
+                    glyph: isVolume ? Model.volumeGlyph(root.outputVolume, root.outputMuted, root.isHeadphones(root.sink))
+                      : isMic ? (root.inputMuted ? "󰍭" : "󰍬")
+                      : isWarmth ? "󰔎" : "󰃠"
+                    glyphTooltip: isVolume ? (root.outputMuted ? "Unmute" : "Mute")
+                      : isMic ? (root.inputMuted ? "Unmute the microphone" : "Mute the microphone")
+                      : isWarmth ? (root.nightlight ? "Back to daylight" : "Warm the screen") : ""
+                    value: root.sliderValue(sliderId)
+                    valueText: isWarmth ? root.warmthShown + "K"
+                      : Math.round((dragging ? liveValue : value) * 100) + "%"
+                    minimum: isVolume || isMic ? 0 : (isWarmth ? 0 : 0.01)
                     step: 0.05
-                    muted: isVolume ? root.outputMuted : false
-                    chip: isVolume ? root.nodeLabel(root.sink) : (root.focusedMonitor !== "" && Quickshell.screens.length > 1 ? root.focusedMonitor : "")
+                    muted: isVolume ? root.outputMuted : (isMic ? root.inputMuted : false)
+                    chip: isVolume ? root.nodeLabel(root.sink)
+                      : (sliderId === "brightness" && root.focusedMonitor !== "" && Quickshell.screens.length > 1 ? root.focusedMonitor : "")
                     chipTooltip: isVolume ? (root.candidateSinks.length > 1 ? "Switch to the next output" : "The only output") : "Brightness of the focused display"
                     chevron: root.tileInfo(cell.modelData).chevron
                     chevronTooltip: root.tileInfo(cell.modelData).chevronTooltip
@@ -1450,7 +1892,12 @@ Item {
                     foreground: root.foreground
                     accent: root.accent
                     fontFamily: root.fontFamily
-                    onGlyphClicked: { root.cursor = cell.index; if (isVolume) root.toggleOutputMute() }
+                    onGlyphClicked: {
+                      root.cursor = cell.index
+                      if (isVolume) root.toggleOutputMute()
+                      else if (isMic) root.toggleInputMute()
+                      else if (isWarmth && root.nightlightService) root.nightlightService.setNightlight(!root.nightlight)
+                    }
                     onChipClicked: { root.cursor = cell.index; if (isVolume) root.cycleSink() }
                     onChevronClicked: root.openPanel(cell.modelData)
                     onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
@@ -1458,10 +1905,14 @@ Item {
                     onMoved: function(v) {
                       root.cursor = cell.index
                       if (isVolume) root.setOutputVolume(v)
+                      else if (isMic) root.setInputVolume(v)
+                      else if (isWarmth) root.previewWarmth(v)
                       else root.previewBrightness(v * 100)
                     }
                     onReleased: function(v) {
                       if (isVolume) root.setOutputVolume(v)
+                      else if (isMic) root.setInputVolume(v)
+                      else if (isWarmth) { root.previewWarmth(v); root.commitWarmth() }
                       else root.setBrightness(v * 100)
                     }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
@@ -1532,7 +1983,7 @@ Item {
                   id: actionsComp
                   ActionsTile {
                     anchors.fill: parent
-                    actions: root.actionRow
+                    actions: cell.modelData === "session" ? root.sessionRow : root.actionRow
                     subCursor: cell.hasCursor && !root.editing ? root.subCursor : -1
                     tooltip: root.editing ? (cell.enabledInSettings ? "Enter hides this tile" : "Enter shows this tile") : ""
                     hasCursor: cell.hasCursor
@@ -1547,6 +1998,42 @@ Item {
                     onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
+                  }
+                }
+
+                Component {
+                  id: themeComp
+                  ThemeTile {
+                    anchors.fill: parent
+                    themes: root.themes
+                    current: root.currentTheme
+                    pendingTheme: root.pending.theme !== undefined ? String(root.pending.theme) : ""
+                    busy: themeProc.running || root.pending.theme !== undefined
+                    error: root.tileErrors.theme || ""
+                    subCursor: cell.hasCursor && !root.editing ? root.subCursor : -1
+                    tooltip: root.editing ? (cell.enabledInSettings ? "Enter hides this tile" : "Enter shows this tile") : ""
+                    hasCursor: cell.hasCursor
+                    editing: root.editing
+                    enabledInSettings: cell.enabledInSettings
+                    reduceMotion: root.reduceMotion
+                    foreground: root.foreground
+                    accent: root.accent
+                    fontFamily: root.fontFamily
+                    onThemeClicked: function(name) { root.cursor = cell.index; root.setTheme(name) }
+                    onThemeHovered: function(index) { root.cursor = cell.index; root.subCursor = index }
+                    onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
+                    onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
+                    onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
+                  }
+                }
+
+                Component {
+                  id: headerComp
+                  HeaderRow {
+                    anchors.fill: parent
+                    label: Model.labelOf(cell.modelData)
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
                   }
                 }
 
@@ -1575,11 +2062,28 @@ Item {
                 }
               }
             }
+            }
+          }
+
+          // A hairline that only appears when there is more to see.
+          Rectangle {
+            visible: scroller.contentHeight > scroller.height
+            anchors.right: scroller.right
+            anchors.rightMargin: -Style.spacing.xs
+            width: Math.max(2, Style.space(2))
+            radius: width / 2
+            color: Util.alpha(root.foreground, 0.25)
+            y: scroller.y + (scroller.height - height) * (scroller.contentHeight > scroller.height
+              ? scroller.contentY / (scroller.contentHeight - scroller.height) : 0)
+            height: Math.max(Style.space(20), scroller.height * (scroller.height / Math.max(1, scroller.contentHeight)))
           }
 
           // ---------- status ----------
           Text {
-            width: parent.width
+            id: statusText
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
             visible: root.status !== ""
             text: root.status
             color: Qt.darker(root.foreground, 1.4)
@@ -1588,6 +2092,7 @@ Item {
             wrapMode: Text.WordWrap
           }
         }
+
       }
     }
   }

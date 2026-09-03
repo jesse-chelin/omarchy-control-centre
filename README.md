@@ -11,13 +11,13 @@ Anything deeper opens the stock Omarchy panel it belongs to.
 
 | | |
 |---|---|
-| One surface | Every daily toggle and slider in one card, on the focused monitor |
+| One surface | Thirty-eight controls in one card, on the focused monitor |
 | Native | Built from the shell's own components, so it follows your theme exactly |
 | Never a duplicate | Wi-Fi lists, Bluetooth pairing, the per-app mixer and monitor layout stay in the stock panels, one chevron away |
 | Live both ways | A tile reflects a change made anywhere else, and a change made here shows up everywhere else |
 | Keyboard first | Arrows, digits, Tab and Enter reach everything; the mouse does too |
-| Adapts | A tile whose hardware is missing is hidden, not greyed out |
-| Yours to arrange | Reorder and hide tiles from the card itself, no file editing |
+| Adapts | A control whose hardware is missing is hidden, not greyed out |
+| Yours to arrange | Show, hide and reorder anything from the card itself, no file editing |
 
 ## Install
 
@@ -56,35 +56,49 @@ another bar panel puts it away (and the other way round). Turn it off with
 | Ctrl+arrows | In edit mode, move the tile under the cursor |
 | Esc | Leave edit mode, then close |
 
-## The tiles
+## The controls
 
-Each one reads the same source the matching stock Omarchy panel reads, so the
-two never disagree.
+Thirty-eight of them. Every one reads or writes the same thing the matching
+stock Omarchy panel, bar indicator or menu entry does, so the card and the
+rest of the desktop never disagree. Sixteen are on when you install it; the
+rest are one keystroke away in edit mode.
 
-| Tile | Reads | Chevron opens |
-|---|---|---|
-| Wi-Fi | NetworkManager through Quickshell; shows the SSID and signal, or Ethernet on a wired box | Network |
-| Bluetooth | The BlueZ adapter and its connected devices | Bluetooth |
-| Volume | The default PipeWire sink, resolved through any speaker tuning so the slider moves real loudness | Audio |
-| Microphone | The default PipeWire source; turns red while something is actually capturing | Audio |
-| Brightness | The focused display's backlight, the same reading the Display panel takes | Display |
-| Night Light, Do Not Disturb, Stay Awake | The shell's own services, the same ones the bar indicators use | — |
-| Power | Power profiles plus battery percentage and time remaining | Power |
-| Recording | Whether a screen recording is running, and for how long | — |
-| Media | The active MPRIS player: art, title, artist and transport | — |
-| Lock, Sleep, Screensaver | — | — |
+| Group | Controls |
+|---|---|
+| Connectivity | Wi-Fi, Bluetooth |
+| Sound | Volume, Mic Level, Microphone mute |
+| Display | Brightness, Night Light, Warmth |
+| Focus | Do Not Disturb, Stay Awake, Screensaver, Crash Capture |
+| Capture | Recording, Screenshot, Colour, Grab Text, Scan QR |
+| Tools | Emoji, Clipboard, Reminder, Share, Transcode, Net Speed, Disk Speed |
+| Desktop | Menu Bar, Window Gaps, Square Ratio, Scrolling layout, Theme |
+| Hardware | Touchpad, Touchscreen, Laptop Screen, Mirror, Hybrid GPU |
+| Power | Power profile and battery |
+| Media | Now playing with transport |
+| System | Lock, Sleep, Screensaver; Log Out, Restart, Shut Down, Hibernate |
 
-Sleep asks twice: the button arms on the first press and suspends on a second
-press within two seconds.
-
-A tile hides itself when the machine cannot back it: no Bluetooth adapter, no
-backlight, no battery and no power profiles, nothing playing. A chevron hides
+A control hides itself when the machine cannot back it: no Bluetooth adapter,
+no backlight, no battery, no touchscreen, nothing playing. A chevron hides
 itself when the stock panel it would open is not in your bar, because the
-shell can only summon a panel that is mounted there.
+shell can only summon a panel that is mounted there. Anything that ends the
+session or the machine asks twice: it arms on the first press, says so, and
+only goes through on a second press within two seconds.
+
+Wi-Fi, Bluetooth, Volume, Microphone, Brightness and Power each open their
+stock panel from the chevron, for the network list, pairing, the per-app
+mixer and monitor layout. The card never tries to replace those.
+
+## Making it yours
+
+Press `,` or click the gear. Edit mode is the whole catalogue, grouped, with
+the controls already on your card shown solid and the rest dimmed. Enter shows
+or hides the one under the cursor, Ctrl and the arrows move it, and the card
+saves as you go. A long catalogue scrolls, and the cursor drags the view along
+with it.
 
 ## Settings
 
-Press `,` or click the gear. Tiles can be hidden and reordered, the card can
+Under the Settings heading in edit mode: the card can
 open at the bar end or in the centre, all animation can be turned off, and the
 bar pill can be turned off. **Centre** is honoured however the card was
 opened; **Bar end** means under the bar icon when you click it, and at the end
@@ -115,9 +129,13 @@ outside its allowed set falls back to the default. A file that is refused
 costs you your layout, not your session; the card opens on defaults and says
 why.
 
-**The child processes.** A handful of Omarchy commands for the things QML
-cannot read directly: the monitor state, power profiles, battery status, the
-audio sink, whether a recording is running. Each runs with a cleared
+**The child processes.** Omarchy commands for the things QML cannot read or
+do directly: the monitor state, power profiles, battery status, the audio
+sink, whether a recording is running, and one `probe.sh` that reads every
+toggle flag, hardware answer and theme name in a single pass rather than one
+child per control. Every command a control can run is a literal argument
+vector in a table in `Model.js`, so the complete set of things this plugin can
+execute is a list you can read in one sitting. Each runs with a cleared
 environment holding only the variables those scripts need, with a fixed
 argument vector that is never built by string concatenation, under a watchdog
 that sends `TERM` and then `KILL`. Every value that reaches an argument vector

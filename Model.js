@@ -11,29 +11,173 @@ var COLUMNS = 4
 var POSITIONS = ["bar-end", "centre"]
 var PROFILES = ["power-saver", "balanced", "performance"]
 
-// The catalogue. Order here is the default tile order; `section` is what Tab
-// walks between; `span` is grid columns out of COLUMNS.
+// The catalogue. This is the whole vocabulary of the card: what a tile is
+// called, what shape it takes, which group it belongs to in edit mode, and
+// whether a fresh install shows it. Order here is the default tile order.
+//
+//   kind      toggle | action | slider | power | media | actions | session
+//             | theme | warmth | option | header
+//   span      grid columns out of COLUMNS
+//   category  the group it appears under in edit mode
+//   on        whether a fresh install shows it
+//
+// A tile being in this list does not mean it appears: `gridIds` also asks
+// whether the machine can back it, so a laptop-only control is absent on a
+// desktop rather than dead on it.
 var TILES = [
-  { id: "wifi",       kind: "toggle",  span: 1, section: "toggles", label: "Wi-Fi" },
-  { id: "bluetooth",  kind: "toggle",  span: 1, section: "toggles", label: "Bluetooth" },
-  { id: "dnd",        kind: "toggle",  span: 1, section: "toggles", label: "Do Not Disturb" },
-  { id: "nightlight", kind: "toggle",  span: 1, section: "toggles", label: "Night Light" },
-  { id: "stayawake",  kind: "toggle",  span: 1, section: "toggles", label: "Stay Awake" },
-  { id: "mic",        kind: "toggle",  span: 1, section: "toggles", label: "Microphone" },
-  { id: "recording",  kind: "toggle",  span: 1, section: "toggles", label: "Recording" },
-  { id: "volume",     kind: "slider",  span: 4, section: "sliders", label: "Volume" },
-  { id: "brightness", kind: "slider",  span: 4, section: "sliders", label: "Brightness" },
-  { id: "power",      kind: "power",   span: 4, section: "power",   label: "Power" },
-  { id: "media",      kind: "media",   span: 4, section: "media",   label: "Media" },
-  { id: "actions",    kind: "actions", span: 4, section: "actions", label: "Lock, Sleep, Screensaver" }
+  // Connectivity
+  { id: "wifi",       kind: "toggle", span: 1, section: "toggles", category: "connectivity", label: "Wi-Fi",       on: true },
+  { id: "bluetooth",  kind: "toggle", span: 1, section: "toggles", category: "connectivity", label: "Bluetooth",   on: true },
+
+  // Focus
+  { id: "dnd",        kind: "toggle", span: 1, section: "toggles", category: "focus", label: "Do Not Disturb", on: true },
+  { id: "stayawake",  kind: "toggle", span: 1, section: "toggles", category: "focus", label: "Stay Awake",     on: true },
+  { id: "nightlight", kind: "toggle", span: 1, section: "toggles", category: "display", label: "Night Light",  on: true },
+  { id: "mic",        kind: "toggle", span: 1, section: "toggles", category: "sound", label: "Microphone",     on: true },
+  { id: "recording",  kind: "toggle", span: 1, section: "toggles", category: "capture", label: "Recording",    on: true },
+
+  // One-shot actions, the things the Omarchy menu calls triggers.
+  { id: "screenshot", kind: "action", span: 1, section: "toggles", category: "capture", label: "Screenshot",   on: true },
+  { id: "colour",     kind: "action", span: 1, section: "toggles", category: "capture", label: "Colour",       on: true },
+  { id: "text",       kind: "action", span: 1, section: "toggles", category: "capture", label: "Grab Text",    on: false },
+  { id: "qr",         kind: "action", span: 1, section: "toggles", category: "capture", label: "Scan QR",      on: false },
+  { id: "emoji",      kind: "action", span: 1, section: "toggles", category: "tools", label: "Emoji",          on: true },
+  { id: "clipboard",  kind: "action", span: 1, section: "toggles", category: "tools", label: "Clipboard",      on: true },
+  { id: "reminder",   kind: "action", span: 1, section: "toggles", category: "tools", label: "Reminder",       on: false },
+  { id: "share",      kind: "action", span: 1, section: "toggles", category: "tools", label: "Share",          on: false },
+  { id: "transcode",  kind: "action", span: 1, section: "toggles", category: "tools", label: "Transcode",      on: false },
+  { id: "netspeed",   kind: "action", span: 1, section: "toggles", category: "tools", label: "Net Speed",      on: false },
+  { id: "diskspeed",  kind: "action", span: 1, section: "toggles", category: "tools", label: "Disk Speed",     on: false },
+
+  // Desktop toggles, all flag-file backed.
+  { id: "bar",        kind: "toggle", span: 1, section: "toggles", category: "desktop", label: "Menu Bar",     on: false },
+  { id: "gaps",       kind: "toggle", span: 1, section: "toggles", category: "desktop", label: "Window Gaps",  on: false },
+  { id: "ratio",      kind: "toggle", span: 1, section: "toggles", category: "desktop", label: "Square Ratio", on: false },
+  { id: "layout",     kind: "toggle", span: 1, section: "toggles", category: "desktop", label: "Scrolling",    on: false },
+  { id: "screensaver", kind: "toggle", span: 1, section: "toggles", category: "focus", label: "Screensaver",   on: false },
+  { id: "crashcapture", kind: "toggle", span: 1, section: "toggles", category: "focus", label: "Crash Capture", on: false },
+
+  // Hardware, each hidden unless the machine has the part.
+  { id: "touchpad",   kind: "toggle", span: 1, section: "toggles", category: "hardware", label: "Touchpad",    on: false },
+  { id: "touchscreen", kind: "toggle", span: 1, section: "toggles", category: "hardware", label: "Touchscreen", on: false },
+  { id: "laptopdisplay", kind: "toggle", span: 1, section: "toggles", category: "hardware", label: "Laptop Screen", on: false },
+  { id: "mirror",     kind: "toggle", span: 1, section: "toggles", category: "hardware", label: "Mirror",      on: false },
+  { id: "hybridgpu",  kind: "action", span: 1, section: "toggles", category: "hardware", label: "Hybrid GPU",  on: false },
+
+  // Sliders and wide rows.
+  { id: "volume",     kind: "slider", span: 4, section: "sliders", category: "sound",   label: "Volume",      on: true },
+  { id: "miclevel",   kind: "slider", span: 4, section: "sliders", category: "sound",   label: "Mic Level",   on: false },
+  { id: "brightness", kind: "slider", span: 4, section: "sliders", category: "display", label: "Brightness",  on: true },
+  { id: "warmth",     kind: "warmth", span: 4, section: "sliders", category: "display", label: "Warmth",      on: false },
+  { id: "theme",      kind: "theme",  span: 4, section: "sliders", category: "desktop", label: "Theme",       on: false },
+  { id: "power",      kind: "power",  span: 4, section: "power",   category: "power",   label: "Power",       on: true },
+  { id: "media",      kind: "media",  span: 4, section: "media",   category: "media",   label: "Media",       on: true },
+  { id: "actions",    kind: "actions", span: 4, section: "actions", category: "system", label: "Lock, Sleep, Screensaver", on: true },
+  { id: "session",    kind: "session", span: 4, section: "actions", category: "system", label: "Log Out, Restart, Shut Down", on: false }
 ]
 
-// Edit mode appends these below the tiles. They ride the same grid and cursor
-// so one keyboard model covers the whole card.
+// Group headings in edit mode, in the order they appear.
+var CATEGORIES = [
+  { id: "connectivity", label: "Connectivity" },
+  { id: "sound",        label: "Sound" },
+  { id: "display",      label: "Display" },
+  { id: "focus",        label: "Focus" },
+  { id: "capture",      label: "Capture" },
+  { id: "tools",        label: "Tools" },
+  { id: "desktop",      label: "Desktop" },
+  { id: "hardware",     label: "Hardware" },
+  { id: "power",        label: "Power" },
+  { id: "media",        label: "Media" },
+  { id: "system",       label: "System" },
+  { id: "settings",     label: "Settings" }
+]
+
+// Edit mode groups the catalogue under headings. A heading is a cell in the
+// same grid so it scrolls and lays out with everything else, but the cursor
+// steps over it: there is nothing to activate on a label.
+var HEADER_PREFIX = "header:"
+
+function isHeader(id) {
+  return String(id).indexOf(HEADER_PREFIX) === 0
+}
+
+function headerFor(category) {
+  return HEADER_PREFIX + category
+}
+
+function headerLabel(id) {
+  return categoryLabel(String(id).substring(HEADER_PREFIX.length))
+}
+
+function isFocusable(id) {
+  return !isHeader(id)
+}
+
+// Every one-shot tile's command, as a literal argument vector. Nothing is
+// built from user input and nothing reaches a shell, so the only commands
+// this plugin can ever run are the ones written here.
+var ACTIONS = {
+  screenshot:  ["omarchy-capture-screenshot"],
+  colour:      ["hyprpicker", "-a"],
+  text:        ["omarchy-capture-text"],
+  qr:          ["omarchy-capture-qr"],
+  reminder:    ["omarchy-reminder", "-i"],
+  share:       ["omarchy-menu-share", "file"],
+  transcode:   ["omarchy-transcode"],
+  hybridgpu:   ["omarchy-launch-floating-terminal-with-presentation", "omarchy-toggle-hybrid-gpu"],
+  lock:        ["omarchy-system-lock"],
+  sleep:       ["systemctl", "suspend"],
+  hibernate:   ["systemctl", "hibernate"],
+  screensaver: ["omarchy-launch-screensaver", "force"],
+  logout:      ["omarchy-system-logout"],
+  reboot:      ["omarchy-system-reboot"],
+  shutdown:    ["omarchy-system-shutdown"]
+}
+
+// Tiles whose action is another shell plugin. Summoning one costs no
+// subprocess at all and does not depend on PATH, so anything the shell
+// already hosts goes through here rather than through ACTIONS.
+var SUMMONS = {
+  emoji:     "omarchy.emojis",
+  clipboard: "omarchy.clipboard",
+  netspeed:  "omarchy.speedtest",
+  diskspeed: "omarchy.disk-speedtest"
+}
+
+// The glyph each tile wears. Every one is the glyph the Omarchy menu or bar
+// already uses for the same thing, so a user recognises it rather than
+// learning a second vocabulary.
+var GLYPHS = {
+  screenshot: "", colour: "󰃉", text: "󰴑", qr: "󰐲",
+  emoji: "", clipboard: "", reminder: "󰢌", share: "",
+  transcode: "󰧸", netspeed: "󰓅", diskspeed: "󰋊",
+  hybridgpu: "", bar: "󰍜", gaps: "", ratio: "",
+  layout: "󱂬", screensaver: "󱄄", crashcapture: "󱚡",
+  touchpad: "󰟸", touchscreen: "󰆽", laptopdisplay: "󰛧",
+  mirror: "󰍹", theme: "", warmth: "󰔎", miclevel: "󰍬"
+}
+
+function glyphOf(id) {
+  return GLYPHS[String(id)] || ""
+}
+
+// A copy, so a caller cannot edit the table it just read from.
+function actionCommand(id) {
+  var argv = ACTIONS[String(id)]
+  if (!argv) return null
+  return argv.slice()
+}
+
+function actionSummon(id) {
+  return SUMMONS[String(id)] || ""
+}
+
+// Edit mode appends these below the catalogue. They ride the same grid and
+// cursor so one keyboard model covers the whole card.
 var OPTIONS = [
-  { id: "opt-position", kind: "option", span: 4, section: "options", label: "Position" },
-  { id: "opt-motion",   kind: "option", span: 4, section: "options", label: "Reduce motion" },
-  { id: "opt-pill",     kind: "option", span: 4, section: "options", label: "Bar pill" }
+  { id: "opt-position", kind: "option", span: 4, section: "options", category: "settings", label: "Position", on: true },
+  { id: "opt-motion",   kind: "option", span: 4, section: "options", category: "settings", label: "Reduce motion", on: true },
+  { id: "opt-pill",     kind: "option", span: 4, section: "options", category: "settings", label: "Bar pill", on: true }
 ]
 
 var _byId = null
@@ -52,22 +196,41 @@ function tileIds() {
   return out
 }
 
+function categoryOf(id) {
+  var t = tileById(id)
+  return t ? (t.category || "") : ""
+}
+
+function defaultEnabled(id) {
+  var t = tileById(id)
+  return t ? t.on === true : false
+}
+
+function categoryLabel(id) {
+  for (var i = 0; i < CATEGORIES.length; i++) if (CATEGORIES[i].id === id) return CATEGORIES[i].label
+  return String(id)
+}
+
 function kindOf(id) {
+  if (isHeader(id)) return "header"
   var t = tileById(id)
   return t ? t.kind : ""
 }
 
 function spanOf(id) {
+  if (isHeader(id)) return COLUMNS
   var t = tileById(id)
   return t ? t.span : 1
 }
 
 function sectionOf(id) {
+  if (isHeader(id)) return "headers"
   var t = tileById(id)
   return t ? t.section : ""
 }
 
 function labelOf(id) {
+  if (isHeader(id)) return headerLabel(id)
   var t = tileById(id)
   return t ? t.label : String(id)
 }
@@ -76,7 +239,7 @@ function labelOf(id) {
 
 function defaultSettings() {
   var tiles = []
-  for (var i = 0; i < TILES.length; i++) tiles.push({ id: TILES[i].id, enabled: true })
+  for (var i = 0; i < TILES.length; i++) tiles.push({ id: TILES[i].id, enabled: TILES[i].on === true })
   return {
     version: SETTINGS_VERSION,
     tiles: tiles,
@@ -123,8 +286,10 @@ function parseSettings(raw) {
       tiles.push({ id: id, enabled: !(isPlainObject(entry) && entry.enabled === false) })
     }
   }
+  // A tile the file has never heard of is new since it was written, so it
+  // arrives at the default a fresh install would give it rather than on.
   for (var j = 0; j < TILES.length; j++) {
-    if (!seen[TILES[j].id]) tiles.push({ id: TILES[j].id, enabled: true })
+    if (!seen[TILES[j].id]) tiles.push({ id: TILES[j].id, enabled: TILES[j].on === true })
   }
   settings.tiles = tiles
 
@@ -140,7 +305,7 @@ function parseSettings(raw) {
 function serializeSettings(settings) {
   var s = settings || defaultSettings()
   var tiles = []
-  for (var i = 0; i < s.tiles.length; i++) tiles.push({ id: s.tiles[i].id, enabled: s.tiles[i].enabled !== false })
+  for (var i = 0; i < s.tiles.length; i++) tiles.push({ id: s.tiles[i].id, enabled: s.tiles[i].enabled === true })
   return JSON.stringify({
     version: SETTINGS_VERSION,
     tiles: tiles,
@@ -157,8 +322,8 @@ function cloneSettings(settings) {
 
 function tileEnabled(settings, id) {
   var tiles = settings && settings.tiles ? settings.tiles : []
-  for (var i = 0; i < tiles.length; i++) if (tiles[i].id === id) return tiles[i].enabled !== false
-  return true
+  for (var i = 0; i < tiles.length; i++) if (tiles[i].id === id) return tiles[i].enabled === true
+  return defaultEnabled(id)
 }
 
 function withTileEnabled(settings, id, enabled) {
@@ -202,16 +367,39 @@ function nextPosition(position) {
 // tiles; edit mode shows every available tile so a disabled one can be turned
 // back on, then the option rows.
 function gridIds(settings, available, editing) {
-  var out = []
   var tiles = settings && settings.tiles ? settings.tiles : []
-  for (var i = 0; i < tiles.length; i++) {
-    var id = tiles[i].id
-    if (!available || available[id] !== true) continue
-    if (!editing && tiles[i].enabled === false) continue
-    out.push(id)
+  if (!editing) {
+    var out = []
+    for (var i = 0; i < tiles.length; i++) {
+      var id = tiles[i].id
+      if (!available || available[id] !== true) continue
+      if (tiles[i].enabled !== true) continue
+      out.push(id)
+    }
+    return out
   }
-  if (editing) for (var j = 0; j < OPTIONS.length; j++) out.push(OPTIONS[j].id)
-  return out
+
+  // Edit mode is the gallery: every control this machine can actually back,
+  // grouped so a long catalogue stays findable, with the ones already on the
+  // card in the order the user put them. The settings rows come last.
+  var grouped = []
+  for (var c = 0; c < CATEGORIES.length; c++) {
+    var category = CATEGORIES[c].id
+    if (category === "settings") continue
+    var members = []
+    for (var t = 0; t < tiles.length; t++) {
+      var tileId = tiles[t].id
+      if (!available || available[tileId] !== true) continue
+      if (categoryOf(tileId) !== category) continue
+      members.push(tileId)
+    }
+    if (members.length === 0) continue
+    grouped.push(headerFor(category))
+    for (var m = 0; m < members.length; m++) grouped.push(members[m])
+  }
+  grouped.push(headerFor("settings"))
+  for (var o = 0; o < OPTIONS.length; o++) grouped.push(OPTIONS[o].id)
+  return grouped
 }
 
 // Places ids left to right, top to bottom, on a COLUMNS-wide grid. A tile
@@ -258,25 +446,40 @@ function layout(ids, cellWidth, gap, heights) {
 // landing cell is whichever one covers the current column, else the nearest.
 function moveCursor(cells, index, dx, dy) {
   if (!cells || cells.length === 0) return -1
-  if (index < 0 || index >= cells.length) return 0
-  if (dx !== 0) return Math.max(0, Math.min(cells.length - 1, index + dx))
+  if (index < 0 || index >= cells.length) return firstFocusableCell(cells)
+  if (dx !== 0) {
+    // Step over headings rather than landing on them.
+    var next = index + dx
+    while (next >= 0 && next < cells.length && !isFocusable(cells[next].id)) next += dx
+    return next >= 0 && next < cells.length ? next : index
+  }
   if (dy === 0) return index
   var current = cells[index]
   var maxRow = 0
   for (var i = 0; i < cells.length; i++) maxRow = Math.max(maxRow, cells[i].row)
+  // Walk whole rows, so a row that holds only a heading is passed through
+  // instead of stopping the cursor dead.
   var targetRow = current.row + dy
-  if (targetRow < 0 || targetRow > maxRow) return index
-  var best = -1
-  var bestDistance = Infinity
-  for (var j = 0; j < cells.length; j++) {
-    var cell = cells[j]
-    if (cell.row !== targetRow) continue
-    var distance
-    if (current.col >= cell.col && current.col < cell.col + cell.span) distance = 0
-    else distance = Math.min(Math.abs(current.col - cell.col), Math.abs(current.col - (cell.col + cell.span - 1)))
-    if (distance < bestDistance) { best = j; bestDistance = distance }
+  while (targetRow >= 0 && targetRow <= maxRow) {
+    var best = -1
+    var bestDistance = Infinity
+    for (var j = 0; j < cells.length; j++) {
+      var cell = cells[j]
+      if (cell.row !== targetRow || !isFocusable(cell.id)) continue
+      var distance
+      if (current.col >= cell.col && current.col < cell.col + cell.span) distance = 0
+      else distance = Math.min(Math.abs(current.col - cell.col), Math.abs(current.col - (cell.col + cell.span - 1)))
+      if (distance < bestDistance) { best = j; bestDistance = distance }
+    }
+    if (best >= 0) return best
+    targetRow += dy
   }
-  return best < 0 ? index : best
+  return index
+}
+
+function firstFocusableCell(cells) {
+  for (var i = 0; i < cells.length; i++) if (isFocusable(cells[i].id)) return i
+  return -1
 }
 
 // Tab walks sections, wrapping, landing on the first cell of the next
@@ -286,6 +489,7 @@ function moveSection(ids, index, direction) {
   var starts = []
   var lastSection = null
   for (var i = 0; i < ids.length; i++) {
+    if (!isFocusable(ids[i])) continue
     var section = sectionOf(ids[i])
     if (section !== lastSection) { starts.push(i); lastSection = section }
   }
@@ -317,13 +521,18 @@ function toggleIndexForDigit(ids, digit) {
 function reindexCursor(ids, pinnedId, index) {
   if (!ids || ids.length === 0) return -1
   var found = ids.indexOf(String(pinnedId || ""))
-  if (found >= 0) return found
-  return Math.max(0, Math.min(ids.length - 1, Number(index) || 0))
+  if (found >= 0 && isFocusable(ids[found])) return found
+  var clamped = Math.max(0, Math.min(ids.length - 1, Number(index) || 0))
+  if (isFocusable(ids[clamped])) return clamped
+  for (var i = clamped; i < ids.length; i++) if (isFocusable(ids[i])) return i
+  for (var j = clamped; j >= 0; j--) if (isFocusable(ids[j])) return j
+  return -1
 }
 
 function firstIndexOfKind(ids, kind) {
   for (var i = 0; i < ids.length; i++) if (kindOf(ids[i]) === kind) return i
-  return ids.length > 0 ? 0 : -1
+  for (var j = 0; j < ids.length; j++) if (isFocusable(ids[j])) return j
+  return -1
 }
 
 // ---------------------------------------------------------------- formatting

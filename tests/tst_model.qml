@@ -256,6 +256,115 @@ TestCase {
     compare(Model.firstIndexOfKind([], "toggle"), -1)
   }
 
+  // ---- the catalogue ------------------------------------------------------
+
+  function test_every_tile_is_whole() {
+    for (var i = 0; i < Model.TILES.length; i++) {
+      var tile = Model.TILES[i]
+      verify(tile.id.length > 0, "a tile with no id")
+      verify(tile.label.length > 0, tile.id + " has no label")
+      verify(tile.span >= 1 && tile.span <= 4, tile.id + " has an impossible span")
+      verify(Model.categoryLabel(tile.category) !== tile.category || tile.category === "",
+             tile.id + " is in a category with no heading: " + tile.category)
+      verify(typeof tile.on === "boolean", tile.id + " does not say whether it ships on")
+    }
+  }
+
+  function test_every_action_tile_has_something_to_run() {
+    for (var i = 0; i < Model.TILES.length; i++) {
+      var tile = Model.TILES[i]
+      if (tile.kind !== "action") continue
+      var hasCommand = Model.actionCommand(tile.id) !== null
+      var hasSummon = Model.actionSummon(tile.id) !== ""
+      verify(hasCommand || hasSummon, tile.id + " is an action with nothing behind it")
+      verify(!(hasCommand && hasSummon), tile.id + " has two ways to run and would do both")
+    }
+  }
+
+  function test_action_commands_are_fixed_vectors() {
+    for (var id in Model.ACTIONS) {
+      var argv = Model.actionCommand(id)
+      verify(argv.length > 0, id + " has an empty command")
+      for (var i = 0; i < argv.length; i++) {
+        verify(typeof argv[i] === "string" && argv[i].length > 0, id + " has an empty argument")
+        // Nothing here is ever handed to a shell, so a command that reads
+        // like shell is a mistake rather than a feature.
+        verify(!/[;&|$`><\n]/.test(argv[i]), id + " argument looks like shell: " + argv[i])
+      }
+    }
+  }
+
+  function test_the_command_table_is_the_only_way_to_run_something() {
+    compare(Model.actionCommand("made-up"), null)
+    compare(Model.actionCommand(""), null)
+    compare(Model.actionSummon("made-up"), "")
+  }
+
+  function test_every_tile_that_needs_a_glyph_has_one() {
+    for (var i = 0; i < Model.TILES.length; i++) {
+      var tile = Model.TILES[i]
+      if (tile.kind !== "action" && tile.kind !== "toggle") continue
+      // These draw their glyph from live state instead of the table.
+      var live = ["wifi", "bluetooth", "dnd", "nightlight", "stayawake", "mic", "recording"]
+      if (live.indexOf(tile.id) !== -1) continue
+      var glyph = Model.glyphOf(tile.id)
+      verify(glyph.length > 0, tile.id + " has no glyph")
+      var cp = glyph.codePointAt(0)
+      verify((cp >= 0xE000 && cp <= 0xF8FF) || (cp >= 0xF0000 && cp <= 0xFFFFD),
+             tile.id + " has a glyph outside the private use areas")
+    }
+  }
+
+  function test_headings_are_not_tiles() {
+    verify(Model.isHeader(Model.headerFor("sound")))
+    verify(!Model.isHeader("volume"))
+    compare(Model.kindOf(Model.headerFor("sound")), "header")
+    compare(Model.spanOf(Model.headerFor("sound")), 4)
+    compare(Model.labelOf(Model.headerFor("sound")), "Sound")
+    verify(!Model.isFocusable(Model.headerFor("sound")))
+    verify(Model.isFocusable("volume"))
+  }
+
+  function test_the_gallery_groups_and_the_grid_does_not() {
+    var available = {}
+    for (var i = 0; i < Model.TILES.length; i++) available[Model.TILES[i].id] = true
+    var settings = Model.defaultSettings()
+
+    var plain = Model.gridIds(settings, available, false)
+    for (var p = 0; p < plain.length; p++) verify(!Model.isHeader(plain[p]), "a heading leaked into the card")
+
+    var gallery = Model.gridIds(settings, available, true)
+    verify(gallery.length > plain.length, "the gallery shows more than the card")
+    var headings = 0
+    for (var g = 0; g < gallery.length; g++) if (Model.isHeader(gallery[g])) headings += 1
+    verify(headings >= 5, "the gallery is not grouped")
+    // Every heading is followed by something, never by another heading.
+    for (var h = 0; h < gallery.length; h++) {
+      if (!Model.isHeader(gallery[h])) continue
+      verify(h + 1 < gallery.length && !Model.isHeader(gallery[h + 1]), "an empty group was shown")
+    }
+  }
+
+  function test_a_tile_the_machine_cannot_back_is_absent_from_both() {
+    var available = {}
+    for (var i = 0; i < Model.TILES.length; i++) available[Model.TILES[i].id] = true
+    available.touchscreen = false
+    var settings = Model.defaultSettings()
+    compare(Model.gridIds(settings, available, false).indexOf("touchscreen"), -1)
+    compare(Model.gridIds(settings, available, true).indexOf("touchscreen"), -1)
+  }
+
+  function test_a_tile_new_since_the_file_was_written_lands_on_its_own_default() {
+    // A file that predates the whole catalogue: only two tiles named.
+    var parsed = Model.parseSettings(JSON.stringify({
+      tiles: [{ id: "wifi", enabled: true }, { id: "volume", enabled: false }]
+    })).settings
+    compare(Model.tileEnabled(parsed, "wifi"), true)
+    compare(Model.tileEnabled(parsed, "volume"), false, "an explicit choice survives")
+    compare(Model.tileEnabled(parsed, "screenshot"), true, "a new tile that ships on arrives on")
+    compare(Model.tileEnabled(parsed, "transcode"), false, "a new tile that ships off arrives off")
+  }
+
   // ---- parsing what subprocesses print ------------------------------------
 
   function test_profiles_parse_and_ignore_anything_unexpected() {

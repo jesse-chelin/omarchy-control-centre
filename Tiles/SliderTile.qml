@@ -21,6 +21,9 @@ TileSurface {
   property string chevronTooltip: ""
   property bool editing: false
   property bool enabledInSettings: true
+  // What the number on the right says. Percent suits volume and brightness;
+  // warmth wants Kelvin, which is not a percentage of anything.
+  property string valueText: Math.round((slider.dragging ? slider.liveValue : root.value) * 100) + "%"
   readonly property alias dragging: slider.dragging
   readonly property real liveValue: slider.liveValue
 
@@ -112,7 +115,7 @@ TileSurface {
       anchors.right: chevronButton.visible || editRow.visible ? chevronButton.left : parent.right
       anchors.rightMargin: chevronButton.visible || editRow.visible ? Style.spacing.sm : 0
       anchors.verticalCenter: glyphButton.verticalCenter
-      text: Math.round((slider.dragging ? slider.liveValue : root.value) * 100) + "%"
+      text: root.valueText
       color: root.muted ? root.dim : root.foreground
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
