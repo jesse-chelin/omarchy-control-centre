@@ -21,6 +21,16 @@ TileSurface {
   property bool capturing: false
   property string captureValue: ""
 
+  // A row that does something rather than holding a value. It wears the same
+  // pill as a capture row, and arms before it fires for the same reason the
+  // session actions do: there is no undo behind it.
+  property bool isAction: false
+  property string actionLabel: ""
+  property bool armed: false
+
+  readonly property bool isPill: isCapture || isAction
+  readonly property bool pillActive: capturing || armed
+
   signal activated()
   signal choiceClicked(string value)
 
@@ -66,32 +76,34 @@ TileSurface {
       id: control
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
-      width: root.isCapture ? capture.implicitWidth
+      width: root.isPill ? pill.implicitWidth
         : (root.isChoice ? group.implicitWidth : toggle.implicitWidth)
-      height: root.isCapture ? capture.implicitHeight
+      height: root.isPill ? pill.implicitHeight
         : (root.isChoice ? group.implicitHeight : toggle.implicitHeight)
 
-      // The shortcut itself, in the shape a shortcut is written.
+      // The shortcut itself, in the shape a shortcut is written, or what an
+      // action row is about to do.
       BorderSurface {
-        id: capture
-        visible: root.isCapture
-        implicitWidth: captureText.implicitWidth + Style.spacing.xxl
-        implicitHeight: captureText.implicitHeight + Style.spacing.md
+        id: pill
+        visible: root.isPill
+        implicitWidth: pillText.implicitWidth + Style.spacing.xxl
+        implicitHeight: pillText.implicitHeight + Style.spacing.md
         radius: Style.cornerRadius
-        color: root.capturing
+        color: root.pillActive
           ? Style.selectedFillFor(root.accent, root.accent)
           : Style.normalFillFor(root.foreground, root.accent)
-        borderSpec: root.capturing
+        borderSpec: root.pillActive
           ? Border.flat(root.accent, Math.max(1, Style.focusBorderWidth))
           : Border.controlSpec("normal", root.foreground, root.accent)
 
         Text {
-          id: captureText
+          id: pillText
           anchors.centerIn: parent
-          text: root.capturing ? "Press a combination"
-            : (root.captureValue !== "" ? root.captureValue : "Not set")
-          color: root.capturing ? root.accent
-            : (root.captureValue !== "" ? root.foreground : root.dim)
+          text: root.isAction ? (root.armed ? "Press again" : root.actionLabel)
+            : (root.capturing ? "Press a combination"
+              : (root.captureValue !== "" ? root.captureValue : "Not set"))
+          color: root.pillActive ? root.accent
+            : (root.isAction || root.captureValue !== "" ? root.foreground : root.dim)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
         }
@@ -113,7 +125,7 @@ TileSurface {
 
       ToggleSwitch {
         id: toggle
-        visible: !root.isChoice && !root.isCapture
+        visible: !root.isChoice && !root.isPill
         checked: root.checked
         foreground: root.foreground
         accent: root.accent

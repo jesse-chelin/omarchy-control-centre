@@ -1552,12 +1552,29 @@ Item {
     else if (kind === "actions") { var a = root.actionRow[Math.max(0, Math.min(root.actionRow.length - 1, root.subCursor))]; if (a) root.runAction(a.id) }
   }
 
+  // Arms like the session actions do, and for the same reason: an arrangement
+  // someone spent a while making is gone in one press otherwise. The cursor
+  // holds its place afterwards by id, because the grid it was indexing into
+  // has just been rebuilt underneath it.
+  function resetArrangement() {
+    if (root.armedId !== "opt-reset") {
+      root.armedId = "opt-reset"
+      armTimer.restart()
+      return
+    }
+    root.armedId = ""
+    root.saveSettings(Model.withDefaultTiles(root.settings))
+    root.cursor = Model.reindexCursor(root.gridIds, "opt-reset", root.cursor)
+    root.resetSubCursor()
+  }
+
   function activateOption(id) {
     if (id === "opt-position") root.saveSettings(Model.withOption(root.settings, "position", Model.nextPosition(root.settings.position)))
     else if (id === "opt-keybind") root.beginCapture()
     else if (id === "opt-density") root.saveSettings(Model.withOption(root.settings, "density", Model.nextDensity(root.settings.density)))
     else if (id === "opt-motion") root.saveSettings(Model.withOption(root.settings, "reduceMotion", !root.reduceMotion))
     else if (id === "opt-pill") root.saveSettings(Model.withOption(root.settings, "barWidget", root.settings.barWidget !== true))
+    else if (id === "opt-reset") root.resetArrangement()
   }
 
   function moveTile(id, delta) {
@@ -2541,7 +2558,13 @@ Item {
                       : optionId === "opt-position" ? "Where the card opens"
                       : optionId === "opt-density" ? "How much room each control takes"
                       : optionId === "opt-motion" ? "No slides, fades or pulses"
-                      : "A launcher in the bar, for the mouse"
+                      : optionId === "opt-pill" ? "A launcher in the bar, for the mouse"
+                      : (root.armedId === "opt-reset"
+                        ? "This throws away the card you have arranged"
+                        : "Every control back where it started")
+                    isAction: optionId === "opt-reset"
+                    actionLabel: "Reset"
+                    armed: optionId === "opt-reset" && root.armedId === "opt-reset"
                     isChoice: optionId === "opt-position" || optionId === "opt-density"
                     choices: optionId === "opt-density"
                       ? [{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]

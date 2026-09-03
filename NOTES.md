@@ -171,6 +171,15 @@ installed, and the theme directory names. `omarchy-theme-set` accepts either
 the display name or the directory name, so the card passes the directory name
 and never has to map a label back.
 
+## Two spellings, on purpose
+
+The plugin is a Control **Centre** and its tile is a Color **Picker**. That is
+not a slip: a tile label is the label Omarchy already uses for the same thing,
+so it is recognised rather than learned, and Omarchy's own binding for it reads
+`o.bind("SUPER + PRINT", "Color picker", ...)`. The plugin's own name is the
+author's to spell. The rule, if a label is ever added: match Omarchy where
+Omarchy has a word for it, and only otherwise choose.
+
 ## Glyphs go missing, silently
 
 Every glyph is embedded as a literal character, because a JavaScript escape
@@ -262,6 +271,39 @@ the surface, and a capture started on the same tick photographs the card
 sitting over whatever the user wanted a picture of. The capture tiles queue
 their command and release it when `backingWindowVisible` goes false, with a
 fallback timer so a compositor that never reports it cannot swallow the action.
+
+## The card cannot tidy the bar
+
+An obvious-looking feature: a setting that hides the bar icons this card
+duplicates. It was measured and dropped, and the reason is worth keeping so it
+is not designed again.
+
+`omarchy.network`, `omarchy.bluetooth`, `omarchy.audio`, `omarchy.monitor` and
+`omarchy.power` are all `kinds=bar-widget` and nothing else, so their panels
+are popups the bar widget owns rather than panel plugins of their own.
+`shell.summon()` sends a bar-widget id to `bar.summonBarWidget(id)`, which
+needs a live widget and otherwise warns "no live bar widget for". Taking one
+of those icons off the bar therefore takes its panel with it: the Wi-Fi list,
+Bluetooth pairing, the per-app mixer, monitor layout. `panelInBar()` already
+gates each chevron on the widget being in `barConfig.layout`, which is the
+right test for exactly this reason, and the card would correctly drop the
+chevron -- having caused the loss itself.
+
+That is the trade: this card's whole claim is that the stock panels are one
+chevron away, and hiding the duplicates spends that to tidy the bar.
+
+`omarchy.indicators` is the one that would cost nothing from the card's side.
+It carries DND, Night Light, Stay Awake, Recording, Reminder and Dictation, of
+which this card covers all but Dictation, and nothing chevrons into it. What
+hiding it costs is the glance while the card is shut, which is a different
+thing from a panel and still not this plugin's to spend.
+
+Two mechanical facts, if it is ever revisited.
+`shell.pluginRegistry.setEnabled(id, false)` splices the entry straight out of
+`bar.layout`, so no subprocess and no writing to `shell.json` from here. And it
+does not remember where the entry was: re-enabling re-inserts at the widget's
+default spot, so anything doing this has to record each icon's section and
+index itself or it silently reorders someone's bar.
 
 ## Someone else's picker
 
@@ -411,7 +453,13 @@ the pixel across all three, and its top edge moves down into place.
 - Open latency, warm, including two IPC round trips: 57 to 87 ms.
 - With the card closed, no probe process is spawned at all over a 10 s watch.
   With it open, the probes appear on their 2 s and 5 s timers.
-- Settings file lands at mode 0600, its directory at 0700.
+- Settings file lands at mode 0600. Its directory does not: `stat -c %a
+  ~/.local/state/omarchy` says 755, because Omarchy creates that directory
+  long before this plugin sees it, and `ensure_private_dir`'s `mkdir(..., 0700)`
+  therefore never runs on a real machine. It is there for the case where the
+  file is pointed somewhere else, and the owner check runs either way. Do not
+  tighten Omarchy's own state directory from here; the file's own mode is what
+  protects the file.
 
 ## Not exercised here
 

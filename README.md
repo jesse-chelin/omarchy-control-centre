@@ -134,6 +134,11 @@ for on a small laptop. **Centre** is honoured however the card was
 opened; **Bar end** means under the bar icon when you click it, and at the end
 of the bar when you press the key. Everything is saved as you change it.
 
+**Reset arrangement** puts every control back where it shipped, shown and
+hidden and ordered. It asks twice, and it is only the arrangement: your
+shortcut, your position, your density and the rest of Settings stay as you set
+them.
+
 State lives in `~/.local/state/omarchy/control-centre.json`, written with mode
 0600. Delete it to start over; the card re-reads it every time it opens.
 
@@ -240,6 +245,12 @@ to the QML need `omarchy-restart-shell` to take effect.
 
 `NOTES.md` records what was measured on the running system while this was
 built, and is worth reading before changing how a tile reads its state.
+
+Every reading of shell and system state here was measured against Omarchy
+4.0.1 (shell 4.0.1-1). None of what it reaches for is a published contract, so
+a later Omarchy can move it: the tiles that depend on a missing piece hide
+themselves rather than showing something dead, and `NOTES.md` says what each
+one reads so it can be re-measured.
 
 ## License
 

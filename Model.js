@@ -181,7 +181,8 @@ var OPTIONS = [
   { id: "opt-position", kind: "option", span: 4, section: "options", category: "settings", label: "Position", on: true },
   { id: "opt-density",  kind: "option", span: 4, section: "options", category: "settings", label: "Density", on: true },
   { id: "opt-motion",   kind: "option", span: 4, section: "options", category: "settings", label: "Reduce motion", on: true },
-  { id: "opt-pill",     kind: "option", span: 4, section: "options", category: "settings", label: "Bar pill", on: true }
+  { id: "opt-pill",     kind: "option", span: 4, section: "options", category: "settings", label: "Bar pill", on: true },
+  { id: "opt-reset",    kind: "option", span: 4, section: "options", category: "settings", label: "Reset arrangement", on: true }
 ]
 
 var _byId = null
@@ -331,6 +332,17 @@ function tileEnabled(settings, id) {
   var tiles = settings && settings.tiles ? settings.tiles : []
   for (var i = 0; i < tiles.length; i++) if (tiles[i].id === id) return tiles[i].enabled === true
   return defaultEnabled(id)
+}
+
+// Every control back where it shipped, and nothing else touched: the
+// arrangement is the thing someone can spend two minutes making worse, and
+// the only way back was once to quit and delete the state file. The settings
+// rows and the keyboard shortcut are not part of an arrangement, so a reset
+// leaves them where they are.
+function withDefaultTiles(settings) {
+  var next = cloneSettings(settings)
+  next.tiles = defaultSettings().tiles
+  return next
 }
 
 function withTileEnabled(settings, id, enabled) {

@@ -199,9 +199,39 @@ TestCase {
   }
 
   function test_edit_mode_appends_the_option_rows() {
+    // Named rather than counted from the end, so adding a settings row is not
+    // a test change: what matters is that they are last and in order.
     var ids = Model.gridIds(Model.defaultSettings(), suite.allAvailable, true)
-    compare(ids[ids.length - 4], "opt-position")
-    compare(ids[ids.length - 1], "opt-pill")
+    var wanted = ["opt-keybind", "opt-position", "opt-density", "opt-motion",
+                  "opt-pill", "opt-reset"]
+    compare(ids.slice(ids.length - wanted.length).join(","), wanted.join(","))
+  }
+
+  function test_reset_restores_the_arrangement_and_nothing_else() {
+    var settings = Model.defaultSettings()
+    settings = Model.withOption(settings, "density", "compact")
+    settings = Model.withOption(settings, "position", "centre")
+    settings = Model.withTileEnabled(settings, "volume", false)
+    settings = Model.withTileShown(settings, "transcode")
+    settings = Model.withTileMoved(settings, "wifi", 1)
+    verify(!Model.tileEnabled(settings, "volume"))
+
+    var reset = Model.withDefaultTiles(settings)
+    compare(reset.tiles.length, Model.defaultSettings().tiles.length)
+    for (var i = 0; i < reset.tiles.length; i++) {
+      compare(reset.tiles[i].id, Model.defaultSettings().tiles[i].id, "order at " + i)
+      compare(reset.tiles[i].enabled, Model.defaultSettings().tiles[i].enabled, "shown at " + i)
+    }
+    // A reset is about the arrangement. Everything under Settings, and the
+    // shortcut, are not part of one.
+    compare(reset.density, "compact")
+    compare(reset.position, "centre")
+  }
+
+  function test_reset_does_not_edit_the_settings_it_was_given() {
+    var settings = Model.withTileEnabled(Model.defaultSettings(), "volume", false)
+    Model.withDefaultTiles(settings)
+    verify(!Model.tileEnabled(settings, "volume"))
   }
 
   function test_density_is_a_choice_with_a_default() {
