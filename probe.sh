@@ -82,6 +82,10 @@ case "${1:-state}" in
     fi
     [[ $theme =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || theme=""
     emit theme.current "$theme"
+    # Last line, always. A reader that does not see it has half an answer,
+    # and half of this is worse than none: a flag that did not arrive is
+    # indistinguishable from a flag that is off.
+    emit probe.complete state
     ;;
 
   static)
@@ -105,6 +109,7 @@ case "${1:-state}" in
       find "${OMARCHY_PATH:-/usr/share/omarchy}/themes/" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null
     } | grep -E '^[a-z0-9][a-z0-9-]{0,63}$' | sort -u | head -40 |
       while read -r name; do emit theme.available "$name"; done
+    emit probe.complete static
     ;;
 
   binds)

@@ -200,6 +200,30 @@ link has been refused. A refusal branch that only knows ELOOP therefore lets
 the symlink through into a generic error, which is how the first version of
 this passed its own test by saying the wrong thing.
 
+## Half an answer is not an answer
+
+A probe that dies is not a probe that answered "no". `probe.sh state` emits
+one line per flag, so a run that was killed, truncated or never found returns
+fewer lines, and the old handler replaced the flag map with whatever had
+arrived. The card then drew a full row of controls, all of them off, as
+current state. The static probe was worse: no lines meant a machine with no
+touchpad, no battery and no themes.
+
+Both modes now end with `probe.complete <mode>`, and a parse that does not
+carry it changes nothing and says so in the log. The timers come round again
+in two seconds, so a transient failure costs one tick of staleness instead of
+a card full of wrong answers.
+
+The same reasoning is why the output cap drops a read rather than trimming it.
+
+## The watchdog only ever sent KILL
+
+Its own comment said "TERM first, KILL if it will not go", and it did not: the
+first firing set a flag and restarted the timer, and the second sent signal 9.
+Every wedged child went straight to KILL. It sends 15 and gives it a second
+now, which is what the comment always claimed and what a child needs to put
+anything down.
+
 ## Bounds belong on the producing side
 
 Read across the marketplace's own review queue, the concern raised more than

@@ -169,6 +169,16 @@ Item {
         proc.signal(9)
         return
       }
+      // TERM, and a second to take it. This used only to set the flag and
+      // come back for the kill, so what the comment above described had
+      // never actually happened: every wedged child went straight to KILL
+      // with no chance to put anything down.
+      proc.signal(15)
+      escalate()
+    }
+
+    // TERM has been sent by someone else; give it the same second.
+    function escalate() {
       escalated = true
       interval = 1000
       restart()
@@ -215,7 +225,8 @@ Item {
       console.warn("control-centre: " + (command && command.length ? command[0] : "a child")
                    + " sent more than " + child.output.maxBytes
                    + " bytes; stopping it and dropping the read")
-      child.signal(9)
+      child.signal(15)
+      dog.escalate()
     }
     onRunningChanged: {
       if (running) dog.arm()
@@ -518,6 +529,13 @@ Item {
       onStreamFinished: {
         if (overflowed) return
         var next = root.parseProbe(text, 64)
+        // An answer without its last line is not an answer. Keeping what was
+        // known beats replacing it with a map of absent flags, which the card
+        // would draw as a row of controls that are all off.
+        if (next["probe.complete"] !== "state") {
+          console.warn("control-centre: the state probe did not finish; keeping what was known")
+          return
+        }
         root.flags = next
         root.currentTheme = /^[a-z0-9][a-z0-9-]{0,63}$/.test(next["theme.current"] || "")
           ? next["theme.current"] : ""
@@ -537,16 +555,26 @@ Item {
         var lines = String(text || "").split("\n")
         var hw = {}
         var list = []
+        var complete = false
         for (var i = 0; i < lines.length && i < 80; i++) {
           var idx = lines[i].indexOf("\t")
           if (idx <= 0) continue
           var key = lines[i].substring(0, idx)
           var value = lines[i].substring(idx + 1).trim().slice(0, 64)
-          if (key === "theme.available") {
+          if (key === "probe.complete") {
+            complete = value === "static"
+          } else if (key === "theme.available") {
             if (/^[a-z0-9][a-z0-9-]{0,63}$/.test(value) && list.length < 40) list.push(value)
           } else if (/^(hw|has)\.[a-z0-9.-]{1,48}$/.test(key)) {
             hw[key] = value
           }
+        }
+        // Same rule as the state probe: a truncated answer would read as a
+        // machine with no touchpad, no battery and no themes, which is a
+        // different card rather than a card that is waiting.
+        if (!complete) {
+          console.warn("control-centre: the hardware probe did not finish; keeping what was known")
+          return
         }
         root.hardware = hw
         root.themes = list
