@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.jesse-chelin.control-centre",
+  "name": "Control Centre",
+  "version": "1.0.0",
+  "author": "Jesse Chelin",
+  "license": "MIT",
+  "description": "One key, every daily system toggle: Wi-Fi, Bluetooth, volume, brightness, night light, Do Not Disturb, stay awake, power profile, mic and media in a native Omarchy overlay",
+  "kinds": [
+    "overlay",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "ControlCentre.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Control Centre",
+    "description": "Opens the Control Centre",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  },
+  "settings": {
+    "path": "~/.local/state/omarchy/control-centre.json",
+    "note": "Edited from the gear in the card header. Documented here for humans; the shell does not read this key.",
+    "tiles": "ordered array of { id, enabled } over wifi, bluetooth, dnd, nightlight, stayawake, mic, recording, volume, brightness, power, media, actions",
+    "position": "bar-end or centre",
+    "reduceMotion": "boolean, disables every animation",
+    "barWidget": "boolean, whether the launcher pill renders in the bar",
+    "hintSeen": "boolean, set once the first-run key hint has been dismissed"
+  }
+}
