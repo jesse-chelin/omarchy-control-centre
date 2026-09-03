@@ -26,15 +26,28 @@ Anything deeper opens the stock Omarchy panel it belongs to.
 omarchy plugin add https://github.com/jesse-chelin/omarchy-control-centre --enable
 ```
 
-Then bind a key in `~/.config/hypr/bindings.lua`:
+A launcher icon appears in your bar straight away. For a keyboard shortcut,
+open the card, press `,` for edit mode, and set one under **Keyboard
+shortcut**: click it, press the combination you want, and it is written into
+`~/.config/hypr/bindings.lua` and live immediately.
+
+It writes one clearly marked block and leaves the rest of that file alone, and
+it keeps a copy of the file as it was in
+`~/.config/hypr/bindings.lua.before-control-centre`. Delete the three marked
+lines to be rid of it, or clear the shortcut from the card with Backspace.
+
+Two things about capturing a shortcut are worth knowing. A combination that is
+already taken cannot be pressed into the field at all, because Hyprland
+consumes it before any window sees it, so the card checks the binding list and
+names what holds it instead. And the number row is not offered: Hyprland does
+not report which digit its workspace bindings use, so a digit combination
+cannot be checked, and on Omarchy those are the workspace switches.
+
+If you would rather write it yourself:
 
 ```lua
 o.bind("SUPER + BACKSLASH", "Control Centre", "omarchy-shell shell toggle io.github.jesse-chelin.control-centre")
 ```
-
-`SUPER + BACKSLASH`, `SUPER + I` and `SUPER + X` were all unbound in the
-Omarchy 4.0.1 defaults. `SUPER + C` is Universal copy and `SUPER + SHIFT + C`
-is the Calendar web app, so neither of those is free.
 
 A launcher icon also appears in the bar, so the card is one click away
 without a keybinding. It behaves like the stock bar icons: the card opens
@@ -129,6 +142,19 @@ places where something outside it gets a say are deliberately narrow.
 **No network, no credentials, no privilege.** The plugin makes no network
 requests, holds no tokens, and installs nothing.
 No sudo or pkexec is required, and neither is ever invoked.
+
+**Your Hyprland config.** Setting a shortcut from the card writes one marked
+block to `~/.config/hypr/bindings.lua`. That is the only file this plugin
+touches that it does not own, so: the combination is validated against a fixed
+grammar of modifiers and key names in the writer itself, whatever the card
+claims to have checked; only the text between the two markers is ever
+replaced, and every other byte of the file is copied through; the file is read
+with `O_NOFOLLOW` under a size cap and refused if it is a symlink, not a
+regular file, or owned by someone else; the new contents go to a private temp
+file in the same directory, are fsynced, and are renamed into place, so an
+interrupted write cannot leave a config Hyprland fails to parse; and a copy of
+the file as it was is kept beside it the first time. `tests/test_keybind.py`
+builds each hostile case and checks the refusal.
 
 **The settings file.** It sits in a directory anything running as you can
 write, so it is read and written by `state.py` rather than by QML, which has

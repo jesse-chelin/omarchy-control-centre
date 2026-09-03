@@ -680,6 +680,142 @@ Item {
     onTriggered: root.commitWarmth()
   }
 
+  // ----------------------------------------------------------- keybinding
+
+  // The card can set its own shortcut, which means writing to the user's
+  // Hyprland config. That is the one thing this plugin touches outside its own
+  // state, so it goes through a helper that owns a single marked block, checks
+  // the combination against a fixed grammar of its own, and keeps a copy of
+  // the file as it was.
+  readonly property string bindingsPath: Quickshell.env("HOME") + "/.config/hypr/bindings.lua"
+  readonly property string bindDescription: "Control Centre"
+
+  property var systemBinds: []
+  property string currentBind: ""
+  property bool capturingKey: false
+  property string keybindNote: ""
+  property bool bindsLoaded: false
+
+  function refreshBinds() {
+    if (!bindsProbe.running) bindsProbe.running = true
+  }
+
+  Child {
+    id: bindsProbe
+    command: [root.pluginDir + "/probe.sh", "binds"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        root.systemBinds = Model.parseBinds(text)
+        root.currentBind = Model.findOwnBind(root.systemBinds, root.bindDescription)
+        root.bindsLoaded = true
+      }
+    }
+  }
+
+  function beginCapture() {
+    root.keybindNote = ""
+    root.capturingKey = true
+    root.refreshBinds()
+  }
+
+  function cancelCapture() {
+    root.capturingKey = false
+  }
+
+  // A press while the capture row is armed. Returns true when it consumed the
+  // key, which is every key: an armed field that let some keys through would
+  // be a field that quietly did something else instead.
+  function captureKey(event) {
+    if (event.key === Qt.Key_Escape) {
+      root.capturingKey = false
+      root.keybindNote = ""
+      return true
+    }
+    if (event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) {
+      root.capturingKey = false
+      root.applyKeybind("")
+      return true
+    }
+    // A modifier on its own is the user still assembling the combination.
+    if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R
+        || event.key === Qt.Key_Control || event.key === Qt.Key_Alt
+        || event.key === Qt.Key_Shift || event.key === Qt.Key_Meta) return true
+
+    if (Model.isDigitKey(event.key)) {
+      root.keybindNote = "Number keys are the workspace switches, and Hyprland will not say which, so they are not offered"
+      return true
+    }
+    var combo = Model.buildCombo({
+      super: (event.modifiers & Qt.MetaModifier) !== 0,
+      ctrl: (event.modifiers & Qt.ControlModifier) !== 0,
+      alt: (event.modifiers & Qt.AltModifier) !== 0,
+      shift: (event.modifiers & Qt.ShiftModifier) !== 0
+    }, event.key)
+
+    if (combo === "") {
+      root.keybindNote = "Hold a modifier such as Super, then press a key"
+      return true
+    }
+    var conflict = Model.conflictFor(root.systemBinds, combo)
+    if (conflict !== "" && combo !== root.currentBind) {
+      root.keybindNote = combo + " is already " + conflict
+      return true
+    }
+    root.capturingKey = false
+    root.applyKeybind(combo)
+    return true
+  }
+
+  function applyKeybind(combo) {
+    if (keybindProc.running) return
+    if (combo !== "" && !Model.isValidCombo(combo)) {
+      root.keybindNote = "That is not a combination this can write"
+      return
+    }
+    root.keybindNote = combo === "" ? "Removing…" : "Setting " + combo + "…"
+    keybindProc.command = combo === ""
+      ? [root.pluginDir + "/keybind.py", "clear", root.bindingsPath]
+      : [root.pluginDir + "/keybind.py", "set", root.bindingsPath, combo]
+    keybindProc.running = true
+  }
+
+  Child {
+    id: keybindProc
+    property string reply: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: keybindProc.reply = String(text).trim()
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.keybindNote = keybindProc.reply !== "" ? keybindProc.reply : "Could not write the bindings file"
+        return
+      }
+      root.keybindNote = keybindProc.reply.indexOf("also bound") === 0
+        ? "Set. You also have one in bindings.lua, " + keybindProc.reply.replace("also bound outside this block on line ", "on line ")
+        : ""
+      // Hyprland re-reads its config on reload, which is what makes the new
+      // binding real; then the card asks the system what it actually has
+      // rather than assuming the write worked.
+      if (!reloadProc.running) reloadProc.running = true
+    }
+  }
+
+  Child {
+    id: reloadProc
+    command: ["hyprctl", "reload"]
+    stdout: StdioCollector { waitForEnd: true }
+    onExited: bindVerify.restart()
+  }
+
+  Timer {
+    id: bindVerify
+    interval: 400
+    repeat: false
+    onTriggered: root.refreshBinds()
+  }
+
   // ---------------------------------------------------------------- themes
 
   function setTheme(name) {
@@ -1069,6 +1205,9 @@ Item {
 
   function setEditing(value) {
     root.dismissHint()
+    root.capturingKey = false
+    root.keybindNote = ""
+    if (value === true && !root.bindsLoaded) root.refreshBinds()
     root.editing = value === true
     root.cursor = 0
     root.resetSubCursor()
@@ -1406,6 +1545,7 @@ Item {
 
   function activateOption(id) {
     if (id === "opt-position") root.saveSettings(Model.withOption(root.settings, "position", Model.nextPosition(root.settings.position)))
+    else if (id === "opt-keybind") root.beginCapture()
     else if (id === "opt-density") root.saveSettings(Model.withOption(root.settings, "density", Model.nextDensity(root.settings.density)))
     else if (id === "opt-motion") root.saveSettings(Model.withOption(root.settings, "reduceMotion", !root.reduceMotion))
     else if (id === "opt-pill") root.saveSettings(Model.withOption(root.settings, "barWidget", root.settings.barWidget !== true))
@@ -1433,6 +1573,10 @@ Item {
   // ---------------------------------------------------------------- keyboard
 
   function handleKey(event) {
+    if (root.capturingKey) {
+      root.captureKey(event)
+      return
+    }
     root.dismissHint()
     var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
     var shift = (event.modifiers & Qt.ShiftModifier) !== 0
@@ -1502,6 +1646,9 @@ Item {
       settingsLoaded: root.settingsLoaded,
       settingsRejected: root.settingsRejected,
       hintVisible: root.hintVisible,
+      keybind: root.currentBind,
+      capturingKey: root.capturingKey,
+      keybindNote: root.keybindNote,
       screen: root.screenName,
       anchorCentre: root.anchorCentre,
       pending: root.pending,
@@ -1535,62 +1682,31 @@ Item {
     return root.cursor
   }
 
+  //   pressKey enter | escape | left | super+ctrl+i | shift+enter
   function pressKey(name) {
     var map = {
       enter: Qt.Key_Return, space: Qt.Key_Space, escape: Qt.Key_Escape, tab: Qt.Key_Tab,
-      up: Qt.Key_Up, down: Qt.Key_Down, left: Qt.Key_Left, right: Qt.Key_Right
+      up: Qt.Key_Up, down: Qt.Key_Down, left: Qt.Key_Left, right: Qt.Key_Right,
+      backspace: Qt.Key_Backspace, backslash: Qt.Key_Backslash, period: Qt.Key_Period
     }
-    var raw = String(name || "")
-    var shift = raw.indexOf("shift+") === 0
-    var ctrl = raw.indexOf("ctrl+") === 0
-    var base = raw.replace(/^(shift|ctrl)\+/, "")
-    var modifiers = (shift ? Qt.ShiftModifier : 0) | (ctrl ? Qt.ControlModifier : 0)
-    root.handleKey({ key: map[base] !== undefined ? map[base] : 0, text: map[base] !== undefined ? "" : base, modifiers: modifiers })
-    return root.cursor
-  }
-
-  // Performs the drop half of a drag, which is the half that changes
-  // anything. Keyboard focus and pointer drags inside a layer-shell surface
-  // cannot be synthesised from outside, so this is how the gesture is tested.
-  //   omarchy-shell shell call <id> dropTile "volume,wifi"
-  // Stages a drag at a point in the grid without finishing it, so the drop
-  // line can be looked at. A pointer drag inside a layer-shell surface cannot
-  // be synthesised from outside any more than keyboard focus can.
-  //   omarchy-shell shell call <id> previewDrop "volume,120,30"
-  function previewDrop(text) {
-    var parts = String(text || "").split(",")
-    if (parts.length !== 3) return "usage: previewDrop <draggedId>,<x>,<y>"
-    root.draggingId = parts[0].trim()
-    var x = Number(parts[1])
-    var y = Number(parts[2])
-    root.dragStartX = x
-    root.dragStartY = y
-    root.dragPointX = x
-    root.dragPointY = y
-    root.dragDX = 0
-    root.dragDY = 0
-    root.dropPlan = null
-    root.applyPlan(Model.dropPlan(root.grid.cells, x, y, root.draggingId, root.gap, root.contentWidth))
-    return JSON.stringify(root.dropPlan)
-  }
-
-  function cancelDrag() {
-    root.draggingId = ""
-    root.dropPlan = null
-    root.dragDX = 0
-    root.dragDY = 0
-    return "ok"
-  }
-
-  //   omarchy-shell shell call <id> dropTile "volume,wifi"        before wifi
-  //   omarchy-shell shell call <id> dropTile "volume,wifi,after"    after it
-  function dropTile(text) {
-    var parts = String(text || "").split(",")
-    if (parts.length < 2) return "usage: dropTile <movedId>,<anchorId>[,after]"
-    root.draggingId = parts[0].trim()
-    root.dropPlan = { anchorId: parts[1].trim(), after: (parts[2] || "").trim() === "after" }
-    root.endDrag()
-    return Model.gridIds(root.settings, root.available, root.editing).join(" ")
+    var parts = String(name || "").toLowerCase().split("+")
+    var base = parts.pop()
+    var modifiers = 0
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i] === "shift") modifiers |= Qt.ShiftModifier
+      else if (parts[i] === "ctrl") modifiers |= Qt.ControlModifier
+      else if (parts[i] === "alt") modifiers |= Qt.AltModifier
+      else if (parts[i] === "super" || parts[i] === "meta") modifiers |= Qt.MetaModifier
+    }
+    var key = map[base]
+    var text = ""
+    if (key === undefined) {
+      if (base.length === 1 && base >= "a" && base <= "z") key = base.toUpperCase().charCodeAt(0)
+      else if (base.length === 1 && base >= "0" && base <= "9") key = base.charCodeAt(0)
+      else { key = 0; text = base }
+    }
+    root.handleKey({ key: key, text: text, modifiers: modifiers })
+    return root.capturingKey ? "capturing" : String(root.cursor)
   }
 
   function setEditMode(text) {
@@ -2404,7 +2520,14 @@ Item {
                     readonly property string optionId: cell.modelData
                     anchors.fill: parent
                     label: Model.labelOf(optionId)
-                    description: optionId === "opt-position" ? "Where the card opens"
+                    isCapture: optionId === "opt-keybind"
+                    capturing: optionId === "opt-keybind" && root.capturingKey
+                    captureValue: root.currentBind
+                    description: optionId === "opt-keybind"
+                      ? (root.keybindNote !== "" ? root.keybindNote
+                        : (root.capturingKey ? "Esc cancels, Backspace removes it"
+                          : "Written into your Hyprland config"))
+                      : optionId === "opt-position" ? "Where the card opens"
                       : optionId === "opt-density" ? "How much room each control takes"
                       : optionId === "opt-motion" ? "No slides, fades or pulses"
                       : "A launcher in the bar, for the mouse"

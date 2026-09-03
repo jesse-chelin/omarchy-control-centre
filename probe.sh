@@ -11,6 +11,8 @@
 #   probe.sh static   what this machine has and what themes exist. Runs once
 #                     per card, because a laptop does not grow a touchscreen
 #                     mid-session.
+#   probe.sh binds    every Hyprland binding, as JSON. Read only when the
+#                     shortcut setting is on screen.
 #
 # Every value printed is a literal this script chose: `on`, `off`, a theme
 # directory name, or a layout name matched against a fixed list. Nothing from
@@ -105,8 +107,15 @@ case "${1:-state}" in
       while read -r name; do emit theme.available "$name"; done
     ;;
 
+  binds)
+    # Every binding on the system, so the card can say what already holds a
+    # combination rather than only that something does. Read on demand, never
+    # on a timer: it is the largest thing this script fetches.
+    timeout 2s hyprctl -j binds 2>/dev/null || echo "[]"
+    ;;
+
   *)
-    echo "usage: probe.sh [state|static]" >&2
+    echo "usage: probe.sh [state|static|binds]" >&2
     exit 2
     ;;
 esac

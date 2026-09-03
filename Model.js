@@ -177,6 +177,7 @@ function actionSummon(id) {
 // Edit mode appends these below the catalogue. They ride the same grid and
 // cursor so one keyboard model covers the whole card.
 var OPTIONS = [
+  { id: "opt-keybind",  kind: "option", span: 4, section: "options", category: "settings", label: "Keyboard shortcut", on: true },
   { id: "opt-position", kind: "option", span: 4, section: "options", category: "settings", label: "Position", on: true },
   { id: "opt-density",  kind: "option", span: 4, section: "options", category: "settings", label: "Density", on: true },
   { id: "opt-motion",   kind: "option", span: 4, section: "options", category: "settings", label: "Reduce motion", on: true },
@@ -824,6 +825,140 @@ function isNodeId(value) {
 
 function isProfile(value) {
   return PROFILES.indexOf(String(value)) !== -1
+}
+
+// ------------------------------------------------------------- keybinding
+//
+// Qt key codes to the names Hyprland writes in a binding. Numeric rather than
+// Qt.Key_* so this stays a plain library the tests can load without a shell.
+var KEY_NAMES = {
+  0x5C: "BACKSLASH", 0x2F: "SLASH", 0x2E: "PERIOD", 0x2C: "COMMA",
+  0x3B: "SEMICOLON", 0x27: "APOSTROPHE", 0x5B: "BRACKETLEFT",
+  0x5D: "BRACKETRIGHT", 0x2D: "MINUS", 0x3D: "EQUAL", 0x60: "GRAVE",
+  0x20: "SPACE", 0x01000004: "RETURN", 0x01000001: "TAB",
+  0x01000003: "BACKSPACE", 0x01000007: "DELETE", 0x01000006: "INSERT",
+  0x01000010: "HOME", 0x01000011: "END", 0x01000016: "PRIOR",
+  0x01000017: "NEXT", 0x01000013: "UP", 0x01000015: "DOWN",
+  0x01000012: "LEFT", 0x01000014: "RIGHT", 0x01000009: "PRINT"
+}
+
+// Hyprland's modifier bits, which is how a binding is compared to every other
+// binding on the system.
+var MOD_BITS = { SHIFT: 1, CTRL: 4, ALT: 8, SUPER: 64 }
+
+// Modifier order in a written binding. Fixed, so the same combination always
+// produces the same string and can be compared as one.
+var MOD_ORDER = ["SUPER", "CTRL", "ALT", "SHIFT"]
+
+// The number row is deliberately not offered. Hyprland reports its workspace
+// bindings with an empty key name, so a digit combination cannot be checked
+// against them, and "Super and a number" is a workspace switch on every
+// Omarchy install. Refusing beats promising a check that cannot be made.
+function isDigitKey(code) {
+  return code >= 0x30 && code <= 0x39
+}
+
+function keyName(code) {
+  var n = Number(code)
+  if (n >= 0x41 && n <= 0x5A) return String.fromCharCode(n)
+  if (n >= 0x01000030 && n <= 0x0100003B) return "F" + (n - 0x01000030 + 1)
+  return KEY_NAMES[n] || ""
+}
+
+// mods is { super, ctrl, alt, shift }. Returns "" when the press cannot be a
+// binding on its own: a bare key, or a modifier with nothing after it.
+function buildCombo(mods, code) {
+  var key = keyName(code)
+  if (!key) return ""
+  var m = mods || {}
+  var parts = []
+  if (m.super) parts.push("SUPER")
+  if (m.ctrl) parts.push("CTRL")
+  if (m.alt) parts.push("ALT")
+  if (m.shift) parts.push("SHIFT")
+  if (parts.length === 0) return ""
+  parts.push(key)
+  return parts.join(" + ")
+}
+
+// The one shape a combination may take, checked again by the writer before
+// anything is put in a file.
+function isValidCombo(combo) {
+  var text = String(combo || "")
+  if (!/^[A-Z0-9 +]{3,60}$/.test(text)) return false
+  var parts = text.split(" + ")
+  if (parts.length < 2) return false
+  var key = parts.pop()
+  var seen = {}
+  for (var i = 0; i < parts.length; i++) {
+    if (MOD_BITS[parts[i]] === undefined || seen[parts[i]]) return false
+    seen[parts[i]] = true
+  }
+  if (key.length === 1) return key >= "A" && key <= "Z"
+  if (/^F([1-9]|1[0-2])$/.test(key)) return true
+  for (var name in KEY_NAMES) if (KEY_NAMES[name] === key) return true
+  return false
+}
+
+function comboModmask(combo) {
+  var parts = String(combo || "").split(" + ")
+  var mask = 0
+  for (var i = 0; i < parts.length - 1; i++) mask += MOD_BITS[parts[i]] || 0
+  return mask
+}
+
+function comboKey(combo) {
+  var parts = String(combo || "").split(" + ")
+  return parts.length > 1 ? parts[parts.length - 1] : ""
+}
+
+// `hyprctl -j binds`, reduced to what a conflict check needs. A binding with
+// no key name is one Hyprland will not tell us the key for, which is how the
+// workspace switches appear; those are dropped rather than guessed at.
+function parseBinds(raw) {
+  var list = []
+  var parsed
+  try {
+    parsed = JSON.parse(String(raw || "[]"))
+  } catch (e) {
+    return list
+  }
+  if (!Array.isArray(parsed)) return list
+  for (var i = 0; i < parsed.length && i < 2000; i++) {
+    var bind = parsed[i]
+    if (!bind || typeof bind.key !== "string" || bind.key.length === 0) continue
+    list.push({
+      modmask: Number(bind.modmask) || 0,
+      key: bind.key.toUpperCase(),
+      description: typeof bind.description === "string" ? bind.description.slice(0, 80) : ""
+    })
+  }
+  return list
+}
+
+// What already holds this combination, by name where Hyprland gives one.
+function conflictFor(binds, combo) {
+  var mask = comboModmask(combo)
+  var key = comboKey(combo)
+  for (var i = 0; i < (binds || []).length; i++) {
+    if (binds[i].modmask !== mask || binds[i].key !== key) continue
+    return binds[i].description || "another binding"
+  }
+  return ""
+}
+
+// This plugin's own binding, found by the description it writes.
+function findOwnBind(binds, description) {
+  for (var i = 0; i < (binds || []).length; i++) {
+    if (binds[i].description !== description) continue
+    var parts = []
+    for (var m = 0; m < MOD_ORDER.length; m++) {
+      if (binds[i].modmask & MOD_BITS[MOD_ORDER[m]]) parts.push(MOD_ORDER[m])
+    }
+    parts.push(binds[i].key)
+    return parts.join(" + ")
+  }
+  return ""
 }
 
 function hintText() {

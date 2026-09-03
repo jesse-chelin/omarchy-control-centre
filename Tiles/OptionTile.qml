@@ -15,6 +15,12 @@ TileSurface {
   property string value: ""
   property bool checked: false
 
+  // A row that captures a key rather than holding a value: it shows what is
+  // set, and while it is armed it says so instead.
+  property bool isCapture: false
+  property bool capturing: false
+  property string captureValue: ""
+
   signal activated()
   signal choiceClicked(string value)
 
@@ -60,8 +66,36 @@ TileSurface {
       id: control
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
-      width: root.isChoice ? group.implicitWidth : toggle.implicitWidth
-      height: root.isChoice ? group.implicitHeight : toggle.implicitHeight
+      width: root.isCapture ? capture.implicitWidth
+        : (root.isChoice ? group.implicitWidth : toggle.implicitWidth)
+      height: root.isCapture ? capture.implicitHeight
+        : (root.isChoice ? group.implicitHeight : toggle.implicitHeight)
+
+      // The shortcut itself, in the shape a shortcut is written.
+      BorderSurface {
+        id: capture
+        visible: root.isCapture
+        implicitWidth: captureText.implicitWidth + Style.spacing.xxl
+        implicitHeight: captureText.implicitHeight + Style.spacing.md
+        radius: Style.cornerRadius
+        color: root.capturing
+          ? Style.selectedFillFor(root.accent, root.accent)
+          : Style.normalFillFor(root.foreground, root.accent)
+        borderSpec: root.capturing
+          ? Border.flat(root.accent, Math.max(1, Style.focusBorderWidth))
+          : Border.controlSpec("normal", root.foreground, root.accent)
+
+        Text {
+          id: captureText
+          anchors.centerIn: parent
+          text: root.capturing ? "Press a combination"
+            : (root.captureValue !== "" ? root.captureValue : "Not set")
+          color: root.capturing ? root.accent
+            : (root.captureValue !== "" ? root.foreground : root.dim)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+      }
 
       ButtonGroup {
         id: group
@@ -79,7 +113,7 @@ TileSurface {
 
       ToggleSwitch {
         id: toggle
-        visible: !root.isChoice
+        visible: !root.isChoice && !root.isCapture
         checked: root.checked
         foreground: root.foreground
         accent: root.accent

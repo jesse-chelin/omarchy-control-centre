@@ -317,6 +317,42 @@ tested by saturation as well as by distance from the foreground. The White
 theme is the case that made this necessary: its accent is a mid grey, and
 following it made "on" weaker than it had been.
 
+## Setting a keybinding from inside the card
+
+Three facts decide the shape of this, all measured rather than assumed.
+
+`hyprctl keyword bind` is refused by Hyprland's non-legacy parser. A binding
+can be added live with `hyprctl eval 'hl.bind(...)'`, which works, but it does
+not survive a config reload, so anything persistent has to land in a file.
+That rules out the runtime route on its own, and it also means the card never
+has to evaluate Lua in the compositor, which is worth not doing.
+
+Writing to `~/.config/hypr/bindings.lua` and calling `hyprctl reload` is the
+whole mechanism. The card then re-reads `hyprctl -j binds` and finds its own
+binding by the description it wrote, rather than trusting that the write took.
+
+There is a tempting third route that should not be taken. Hyprland auto-loads
+every Lua file in `~/.local/state/omarchy/toggles/hypr` on each reload, which
+looks like a tidy place for a plugin to drop a generated binding. Omarchy's
+own `toggles.lua` carries a comment explaining that they had to stop doing
+exactly that, because a generated file there once carried an injected device
+name and must never be executed again. Generating Lua from a key combination
+someone typed is that same shape.
+
+## What a capture field cannot do here
+
+A bound combination never reaches any window: `hyprctl -j binds` reports
+`non_consuming: false` on every Omarchy binding, so the compositor swallows it
+first. Pressing an already-taken combination into a capture field therefore
+produces nothing at all, not an error. The conflict has to be found by reading
+the binding list and comparing, which also lets the card name what holds it;
+224 of 226 bindings carry a readable description.
+
+The number row is refused outright. Hyprland reports its workspace bindings
+with an empty key name, so a digit combination cannot be checked against them,
+and on Omarchy those are the workspace switches. Refusing beats offering a
+check that cannot be made.
+
 ## Motion
 
 The card's resting position is derived from its own width and height: it is

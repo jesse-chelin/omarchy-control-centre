@@ -64,6 +64,11 @@ else note "qml structure" "FAILED"; echo "$out"; status=1; fi
 if out=$(python3 tests/test_state.py); then note "state file" "ok"
 else note "state file" "FAILED"; echo "$out"; status=1; fi
 
+# The bindings writer is the only thing that touches a file the plugin does
+# not own, and that file is the user's keyboard.
+if out=$(python3 tests/test_keybind.py); then note "keybind writer" "ok"
+else note "keybind writer" "FAILED"; echo "$out"; status=1; fi
+
 # Every Nerd Font glyph in the source has to exist in the font and depict
 # what the test pins it to. Shipping a wrong codepoint is silent.
 if out=$(python3 tests/test_glyphs.py); then note "glyphs" "ok"

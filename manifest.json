@@ -24,7 +24,7 @@
   },
   "settings": {
     "path": "~/.local/state/omarchy/control-centre.json",
-    "note": "Edited from the gear in the card header. Documented here for humans; the shell does not read this key.",
+    "note": "Edited from the gear in the card header. Documented here for humans; the shell does not read this key. The keyboard shortcut is not stored here: it lives in one marked block in ~/.config/hypr/bindings.lua, which is where Hyprland reads it from.",
     "tiles": "ordered array of { id, enabled }; the catalogue and each control's shipped default live in Model.js, and an id missing from this file takes that default",
     "position": "bar-end or centre",
     "reduceMotion": "boolean, disables every animation",
