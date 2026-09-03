@@ -82,7 +82,7 @@ function defaultSettings() {
     tiles: tiles,
     position: "bar-end",
     reduceMotion: false,
-    barWidget: false,
+    barWidget: true,
     hintSeen: false
   }
 }
@@ -129,9 +129,11 @@ function parseSettings(raw) {
   settings.tiles = tiles
 
   if (POSITIONS.indexOf(parsed.position) !== -1) settings.position = parsed.position
-  settings.reduceMotion = parsed.reduceMotion === true
-  settings.barWidget = parsed.barWidget === true
-  settings.hintSeen = parsed.hintSeen === true
+  // Present but not exactly `true` means false; absent means the default
+  // stands. Those are different answers whenever a default is true.
+  if (parsed.reduceMotion !== undefined) settings.reduceMotion = parsed.reduceMotion === true
+  if (parsed.barWidget !== undefined) settings.barWidget = parsed.barWidget === true
+  if (parsed.hintSeen !== undefined) settings.hintSeen = parsed.hintSeen === true
   return { settings: settings, rejected: "" }
 }
 

@@ -15,7 +15,11 @@ BarWidget {
     var loader = loaders ? loaders[root.moduleName] : null
     return loader && loader.item ? loader.item : null
   }
-  readonly property bool shown: overlay && overlay.settings ? overlay.settings.barWidget === true : false
+  // On by default, but not until the overlay has read the settings file:
+  // painting the pill and then taking it away again is worse for someone who
+  // turned it off than showing it a beat after the rest of the bar.
+  readonly property bool shown: overlay && overlay.settingsLoaded
+    ? overlay.settings.barWidget === true : false
   readonly property bool overlayOpen: overlay ? overlay.opened === true : false
 
   visible: shown

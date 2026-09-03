@@ -21,7 +21,7 @@ TestCase {
     compare(settings.tiles.length, Model.TILES.length)
     compare(settings.position, "bar-end")
     compare(settings.reduceMotion, false)
-    compare(settings.barWidget, false)
+    compare(settings.barWidget, true, "the bar pill is on by default")
     compare(settings.hintSeen, false)
   }
 
@@ -80,6 +80,21 @@ TestCase {
     compare(parsed.settings.reduceMotion, false, "only a real true counts")
     compare(parsed.settings.barWidget, false)
     compare(parsed.settings.hintSeen, false)
+  }
+
+  function test_an_absent_key_keeps_its_default() {
+    // Written before the key existed, or hand-edited down to one line.
+    var parsed = Model.parseSettings('{"position":"centre"}')
+    compare(parsed.settings.barWidget, true, "a default of true survives an absent key")
+    compare(parsed.settings.reduceMotion, false)
+    compare(parsed.settings.hintSeen, false)
+    compare(parsed.settings.position, "centre")
+  }
+
+  function test_the_pill_can_be_turned_off_and_stays_off() {
+    var settings = Model.withOption(Model.defaultSettings(), "barWidget", false)
+    compare(settings.barWidget, false)
+    compare(Model.parseSettings(Model.serializeSettings(settings)).settings.barWidget, false)
   }
 
   function test_settings_round_trip() {
