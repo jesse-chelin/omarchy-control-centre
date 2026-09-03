@@ -539,13 +539,24 @@ the pixel across all three, and its top edge moves down into place.
 
 ## Not exercised here
 
-- Non-zero `decoration:rounding`. Omarchy ships `rounding = 0` and none of the
-  six installed themes overrides it, and Hyprland's non-legacy config parser
-  refuses `hyprctl keyword`. The card and every tile take their radius from
-  `Style.cornerRadius`, the same as every stock component, so they follow
-  whatever a theme sets.
+The list used to be much longer. The card was first built on a machine with no
+Bluetooth adapter, no backlight, no battery and no power profiles, so those
+four tiles were verified only by their hidden state and by reading the same
+sources the stock panels read. They have since been exercised on a laptop that
+has all of them: an adapter with a keyboard paired, a backlight the slider
+moves, a battery reporting 95% and holding, and three power profiles with
+balanced active. The listing image is that machine, which is why it shows a
+fuller card than the first one did.
+
+What is still untested:
+
 - A second monitor, and a screen smaller than this one. The card caps its
   height against the screen and its width against the screen minus two gaps.
-- A real Bluetooth adapter, a backlight, a battery, and power profiles: none
-  exist on this machine, so those tiles were verified only by their hidden
-  state and by reading the same sources the stock panels read.
+- Non-zero `decoration:rounding`. The active theme ships `rounding = 0`, so
+  nothing here has been drawn with rounded corners. Three of the twenty-five
+  installed themes do set it -- lumon and vigil at 6, solitude at 10 -- so this
+  is testable by switching theme rather than by editing a config, which is
+  worth knowing because Hyprland's non-legacy parser refuses `hyprctl
+  keyword`. The card and every tile take their radius from
+  `Style.cornerRadius`, the same as every stock component, so they should
+  follow whatever a theme sets.
