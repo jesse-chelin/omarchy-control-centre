@@ -138,34 +138,32 @@ TestCase {
     compare(moved.tiles.length, settings.tiles.length)
   }
 
-  function test_a_drop_puts_a_tile_where_the_target_sits() {
+  function test_a_drop_inserts_next_to_its_anchor() {
     var settings = Model.defaultSettings()
-    var moved = Model.withTileDroppedOn(settings, "volume", "wifi")
-    compare(moved.tiles[0].id, "volume")
-    compare(moved.tiles[1].id, "wifi")
-    compare(moved.tiles.length, settings.tiles.length)
+    var before = Model.withTileMovedNextTo(settings, "volume", "wifi", false)
+    compare(before.tiles[0].id, "volume")
+    compare(before.tiles[1].id, "wifi")
+    var after = Model.withTileMovedNextTo(settings, "volume", "wifi", true)
+    compare(after.tiles[0].id, "wifi")
+    compare(after.tiles[1].id, "volume")
+    compare(after.tiles.length, settings.tiles.length)
   }
 
-  function test_dropping_a_hidden_tile_onto_the_card_shows_it() {
+  function test_a_tile_takes_the_company_it_is_dropped_into() {
     var settings = Model.defaultSettings()
     compare(Model.tileEnabled(settings, "qr"), false)
-    var moved = Model.withTileDroppedOn(settings, "qr", "wifi")
-    compare(Model.tileEnabled(moved, "qr"), true, "dragging onto the card is how it gets added")
-    compare(moved.tiles[0].id, "qr")
-  }
-
-  function test_dropping_onto_a_hidden_tile_does_not_show_the_dragged_one() {
-    var settings = Model.defaultSettings()
-    var moved = Model.withTileDroppedOn(settings, "qr", "transcode")
-    compare(Model.tileEnabled(moved, "qr"), false, "both were hidden and both stay hidden")
+    var onto = Model.withTileMovedNextTo(settings, "qr", "wifi", false)
+    compare(Model.tileEnabled(onto, "qr"), true, "landing on the card puts it on the card")
+    var away = Model.withTileMovedNextTo(settings, "wifi", "transcode", false)
+    compare(Model.tileEnabled(away, "wifi"), false, "landing among the hidden takes it off")
   }
 
   function test_a_drop_that_goes_nowhere_changes_nothing() {
     var settings = Model.defaultSettings()
     var before = Model.serializeSettings(settings)
-    compare(Model.serializeSettings(Model.withTileDroppedOn(settings, "wifi", "wifi")), before)
-    compare(Model.serializeSettings(Model.withTileDroppedOn(settings, "wifi", "")), before)
-    compare(Model.serializeSettings(Model.withTileDroppedOn(settings, "made-up", "wifi")), before)
+    compare(Model.serializeSettings(Model.withTileMovedNextTo(settings, "wifi", "wifi", false)), before)
+    compare(Model.serializeSettings(Model.withTileMovedNextTo(settings, "wifi", "", false)), before)
+    compare(Model.serializeSettings(Model.withTileMovedNextTo(settings, "made-up", "wifi", false)), before)
   }
 
   function test_showing_a_tile_lands_it_at_the_end_of_the_card() {
@@ -423,57 +421,114 @@ TestCase {
 
   // ---- where a drop lands -------------------------------------------------
 
+  readonly property int gap: 10
+  readonly property int gridWidth: 4 * 100 + 3 * 10
+
   function dragCells() {
-    // wifi bluetooth dnd nightlight / volume(4 wide) / a heading / a setting
+    // wifi bluetooth dnd nightlight / volume(full width) / heading / setting
     var ids = ["wifi", "bluetooth", "dnd", "nightlight", "volume",
                Model.headerFor("sound"), "opt-motion"]
-    return Model.layout(ids, 100, 10, { toggle: 70, slider: 60, header: 20, option: 40 }).cells
+    return Model.layout(ids, 100, suite.gap, { toggle: 70, slider: 60, header: 20, option: 40 }).cells
   }
 
-  function test_a_point_lands_on_the_tile_it_is_over() {
+  function cellFor(cells, id) {
+    for (var i = 0; i < cells.length; i++) if (cells[i].id === id) return cells[i]
+    return null
+  }
+
+  function test_two_narrow_tiles_sit_side_by_side() {
     var cells = suite.dragCells()
-    compare(Model.tileAtPoint(cells, 50, 30, "volume"), "wifi")
-    compare(Model.tileAtPoint(cells, 160, 30, "volume"), "bluetooth")
-    // The wide slider row, anywhere along it.
-    compare(Model.tileAtPoint(cells, 20, 100, "wifi"), "volume")
-    compare(Model.tileAtPoint(cells, 400, 100, "wifi"), "volume")
+    var target = suite.cellFor(cells, "bluetooth")
+    var left = Model.dropPlan(cells, target.x + 10, target.y + 10, "nightlight", suite.gap, suite.gridWidth)
+    compare(left.anchorId, "bluetooth")
+    compare(left.after, false, "the left half means before it")
+    verify(left.vertical, "between two narrow tiles the line stands up")
+
+    var right = Model.dropPlan(cells, target.x + target.width - 10, target.y + 10, "nightlight", suite.gap, suite.gridWidth)
+    compare(right.anchorId, "bluetooth")
+    compare(right.after, true, "the right half means after it")
+  }
+
+  function test_a_full_width_tile_only_goes_above_or_below() {
+    var cells = suite.dragCells()
+    var target = suite.cellFor(cells, "bluetooth")
+    // Dragging the full-width Volume row onto a narrow tile: it cannot sit
+    // beside it, so the answer is the row above or the row below, anchored to
+    // the ends of that row rather than to the tile the pointer happens to be
+    // over.
+    var above = Model.dropPlan(cells, target.x + 10, target.y + 5, "volume", suite.gap, suite.gridWidth)
+    compare(above.anchorId, "wifi", "above the row means before the row's first tile")
+    compare(above.after, false)
+    verify(!above.vertical, "a full-width move draws a line across")
+
+    var below = Model.dropPlan(cells, target.x + 10, target.y + target.height - 5, "volume", suite.gap, suite.gridWidth)
+    compare(below.anchorId, "nightlight", "below the row means after the row's last tile")
+    compare(below.after, true)
+    verify(!below.vertical)
+  }
+
+  function test_a_narrow_tile_cannot_sit_beside_a_full_width_one() {
+    var cells = suite.dragCells()
+    var wide = suite.cellFor(cells, "volume")
+    var above = Model.dropPlan(cells, wide.x + 300, wide.y + 5, "wifi", suite.gap, suite.gridWidth)
+    compare(above.anchorId, "volume")
+    compare(above.after, false)
+    verify(!above.vertical, "beside a full-width row is not a place, so the line lies flat")
+
+    var below = Model.dropPlan(cells, wide.x + 300, wide.y + wide.height - 5, "wifi", suite.gap, suite.gridWidth)
+    compare(below.after, true)
+  }
+
+  function test_the_line_is_drawn_where_the_tile_would_land() {
+    var cells = suite.dragCells()
+    var target = suite.cellFor(cells, "bluetooth")
+    var left = Model.dropPlan(cells, target.x + 10, target.y + 10, "nightlight", suite.gap, suite.gridWidth)
+    verify(left.indicator.x < target.x, "the line sits in the gap before the tile")
+    compare(left.indicator.y, target.y)
+    compare(left.indicator.height, target.height)
+    verify(left.indicator.width <= suite.gap, "a standing line is thin")
+
+    var wide = suite.cellFor(cells, "volume")
+    var above = Model.dropPlan(cells, wide.x + 300, wide.y + 5, "wifi", suite.gap, suite.gridWidth)
+    compare(above.indicator.x, 0, "a flat line runs the whole width")
+    compare(above.indicator.width, suite.gridWidth)
+    verify(above.indicator.y < wide.y)
+    verify(above.indicator.height <= suite.gap)
   }
 
   function test_the_dragged_tile_reports_itself() {
     var cells = suite.dragCells()
-    compare(Model.tileAtPoint(cells, 50, 30, "wifi"), "self",
-            "back over its own slot is a drop that should do nothing")
+    var plan = Model.dropPlan(cells, 50, 30, "wifi", suite.gap, suite.gridWidth)
+    compare(plan.self, true, "back over its own slot is a drop that should do nothing")
   }
 
   function test_nothing_takes_a_drop_that_should_not() {
     var cells = suite.dragCells()
-    var heading = cells[5]
-    compare(Model.tileAtPoint(cells, heading.x + 5, heading.y + 5, "wifi"), "",
-            "a heading is not a slot")
-    var option = cells[6]
-    compare(Model.tileAtPoint(cells, option.x + 5, option.y + 5, "wifi"), "",
-            "a settings row is not a slot")
+    var heading = suite.cellFor(cells, Model.headerFor("sound"))
+    compare(Model.dropPlan(cells, heading.x + 5, heading.y + 5, "wifi", suite.gap, suite.gridWidth), null)
+    var option = suite.cellFor(cells, "opt-motion")
+    compare(Model.dropPlan(cells, option.x + 5, option.y + 5, "wifi", suite.gap, suite.gridWidth), null)
   }
 
   function test_a_gap_and_the_void_take_nothing() {
     var cells = suite.dragCells()
-    // Between the first and second tile: cells are 100 wide with a 10 gap.
-    compare(Model.tileAtPoint(cells, 105, 30, "volume"), "")
-    compare(Model.tileAtPoint(cells, -20, 30, "volume"), "", "left of everything")
-    compare(Model.tileAtPoint(cells, 50, 9999, "volume"), "", "below everything")
-    compare(Model.tileAtPoint([], 50, 30, "volume"), "")
-    compare(Model.tileAtPoint(null, 50, 30, "volume"), "")
+    compare(Model.dropPlan(cells, 105, 30, "volume", suite.gap, suite.gridWidth), null, "between two tiles")
+    compare(Model.dropPlan(cells, -20, 30, "volume", suite.gap, suite.gridWidth), null, "left of everything")
+    compare(Model.dropPlan(cells, 50, 9999, "volume", suite.gap, suite.gridWidth), null, "below everything")
+    compare(Model.dropPlan([], 50, 30, "volume", suite.gap, suite.gridWidth), null)
+    compare(Model.dropPlan(null, 50, 30, "volume", suite.gap, suite.gridWidth), null)
   }
 
-  function test_a_drop_lands_where_the_hit_test_pointed() {
-    // The two halves of the gesture agree: whatever tileAtPoint names is a
-    // tile withTileDroppedOn can actually move onto.
+  function test_the_plan_and_the_move_agree() {
+    // Whatever dropPlan names is something withTileMovedNextTo can act on,
+    // and the tile ends up on the side the plan said.
     var cells = suite.dragCells()
-    var target = Model.tileAtPoint(cells, 160, 30, "volume")
-    var moved = Model.withTileDroppedOn(Model.defaultSettings(), "volume", target)
+    var target = suite.cellFor(cells, "bluetooth")
+    var plan = Model.dropPlan(cells, target.x + target.width - 10, target.y + 10, "nightlight", suite.gap, suite.gridWidth)
+    var moved = Model.withTileMovedNextTo(Model.defaultSettings(), "nightlight", plan.anchorId, plan.after)
     var order = []
     for (var i = 0; i < moved.tiles.length; i++) if (moved.tiles[i].enabled) order.push(moved.tiles[i].id)
-    compare(order[order.indexOf("volume") + 1], target, "it landed just before what it was dropped on")
+    compare(order[order.indexOf(plan.anchorId) + 1], "nightlight")
   }
 
   // ---- parsing what subprocesses print ------------------------------------

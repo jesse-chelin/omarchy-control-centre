@@ -352,23 +352,24 @@ function withTileMoved(settings, id, delta) {
   return next
 }
 
-// Drops `id` where `targetId` currently sits. This is the drag gesture: the
-// two ends of it are tiles, never slot numbers, because the list shifts under
-// the pointer as soon as anything moves.
-function withTileDroppedOn(settings, id, targetId) {
-  if (!id || !targetId || id === targetId) return cloneSettings(settings)
+// Puts `id` immediately before or after `anchorId`. This is what a drop
+// applies: the two ends of it are tiles, never slot numbers, because the list
+// shifts as soon as anything moves.
+function withTileMovedNextTo(settings, id, anchorId, after) {
+  if (!id || !anchorId || id === anchorId) return cloneSettings(settings)
   var next = cloneSettings(settings)
   var from = -1
   for (var i = 0; i < next.tiles.length; i++) if (next.tiles[i].id === id) from = i
   if (from < 0) return next
   var entry = next.tiles.splice(from, 1)[0]
   var to = -1
-  for (var j = 0; j < next.tiles.length; j++) if (next.tiles[j].id === targetId) to = j
+  for (var j = 0; j < next.tiles.length; j++) if (next.tiles[j].id === anchorId) to = j
   if (to < 0) { next.tiles.splice(from, 0, entry); return next }
-  // Dropping onto something already on the card puts it in that place and
-  // therefore on the card too, which is the whole point of dragging it there.
-  entry.enabled = tileEnabled(settings, targetId)
-  next.tiles.splice(to, 0, entry)
+  // A tile takes the company it is dropped into: landing next to something on
+  // the card puts it on the card, and landing among the hidden ones takes it
+  // off. That is the whole gesture, in both directions.
+  entry.enabled = tileEnabled(settings, anchorId)
+  next.tiles.splice(after === true ? to + 1 : to, 0, entry)
   return next
 }
 
@@ -531,24 +532,84 @@ function moveCursor(cells, index, dx, dy) {
   return index
 }
 
-// Which tile a point lands on, from the grid's own geometry. The dragged
-// tile is painted away from its slot, so asking what is under the pointer
-// would answer with the thing being carried; the slots are the truth.
-//
-//   "self"  the pointer is back over where the drag started, so a drop here
-//           should do nothing
-//   ""      a heading, a settings row, a gap, or off the grid entirely
-function tileAtPoint(cells, x, y, draggingId) {
-  if (!cells) return ""
+// Which cell a point lands in, or null. The dragged tile is painted away from
+// its slot, so asking what is under the pointer would answer with the thing
+// being carried; the slots are the truth.
+function cellAt(cells, x, y) {
+  if (!cells) return null
   for (var i = 0; i < cells.length; i++) {
     var cell = cells[i]
     if (x < cell.x || x > cell.x + cell.width) continue
     if (y < cell.y || y > cell.y + cell.height) continue
-    if (cell.id === String(draggingId)) return "self"
-    if (isHeader(cell.id) || kindOf(cell.id) === "option") return ""
-    return cell.id
+    return cell
   }
-  return ""
+  return null
+}
+
+function cellsInRow(cells, row) {
+  var out = []
+  for (var i = 0; i < cells.length; i++) {
+    if (cells[i].row === row && isFocusable(cells[i].id)) out.push(cells[i])
+  }
+  return out
+}
+
+// Where a drop would put the tile being dragged. An insertion point, not a
+// swap: tiles are different widths, and "put it where that one is" has no
+// meaning when a full-width row and a quarter-width square trade places.
+//
+// The rule follows the shape of the grid. A full-width block occupies a whole
+// row, so it can only ever go above or below something, never beside it; the
+// same is true of anything dropped onto one. Two narrow tiles can sit side by
+// side, so between them the answer is left or right. Which side is decided by
+// the half of the target the pointer is in.
+//
+// Returns null when the point is over nothing that can take a drop, so the
+// caller can keep the last real answer rather than flickering; { self: true }
+// when the pointer is back over the dragged tile's own slot; otherwise an
+// anchor to insert next to, and the line to draw for it.
+function dropPlan(cells, x, y, draggedId, gap, gridWidth) {
+  var cell = cellAt(cells, x, y)
+  if (!cell) return null
+  if (cell.id === String(draggedId)) return { self: true }
+  if (!isFocusable(cell.id) || kindOf(cell.id) === "option") return null
+
+  var thickness = Math.max(2, Math.round(gap / 2))
+  var draggedWide = spanOf(draggedId) >= COLUMNS
+  var targetWide = cell.span >= COLUMNS
+
+  if (draggedWide || targetWide) {
+    var above = y < cell.y + cell.height / 2
+    var row = cellsInRow(cells, cell.row)
+    if (row.length === 0) return null
+    var anchor = above ? row[0] : row[row.length - 1]
+    var edge = above ? cell.y - gap / 2 : cell.y + cell.height + gap / 2
+    return {
+      anchorId: anchor.id,
+      after: !above,
+      vertical: false,
+      indicator: {
+        x: 0,
+        y: Math.round(edge - thickness / 2),
+        width: gridWidth,
+        height: thickness
+      }
+    }
+  }
+
+  var left = x < cell.x + cell.width / 2
+  var lineX = left ? cell.x - gap / 2 : cell.x + cell.width + gap / 2
+  return {
+    anchorId: cell.id,
+    after: !left,
+    vertical: true,
+    indicator: {
+      x: Math.round(lineX - thickness / 2),
+      y: cell.y,
+      width: thickness,
+      height: cell.height
+    }
+  }
 }
 
 function firstFocusableCell(cells) {

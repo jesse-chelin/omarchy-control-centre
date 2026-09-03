@@ -1512,11 +1512,42 @@ Item {
   // anything. Keyboard focus and pointer drags inside a layer-shell surface
   // cannot be synthesised from outside, so this is how the gesture is tested.
   //   omarchy-shell shell call <id> dropTile "volume,wifi"
+  // Stages a drag at a point in the grid without finishing it, so the drop
+  // line can be looked at. A pointer drag inside a layer-shell surface cannot
+  // be synthesised from outside any more than keyboard focus can.
+  //   omarchy-shell shell call <id> previewDrop "volume,120,30"
+  function previewDrop(text) {
+    var parts = String(text || "").split(",")
+    if (parts.length !== 3) return "usage: previewDrop <draggedId>,<x>,<y>"
+    root.draggingId = parts[0].trim()
+    var x = Number(parts[1])
+    var y = Number(parts[2])
+    root.dragStartX = x
+    root.dragStartY = y
+    root.dragPointX = x
+    root.dragPointY = y
+    root.dragDX = 0
+    root.dragDY = 0
+    root.dropPlan = null
+    root.applyPlan(Model.dropPlan(root.grid.cells, x, y, root.draggingId, root.gap, root.contentWidth))
+    return JSON.stringify(root.dropPlan)
+  }
+
+  function cancelDrag() {
+    root.draggingId = ""
+    root.dropPlan = null
+    root.dragDX = 0
+    root.dragDY = 0
+    return "ok"
+  }
+
+  //   omarchy-shell shell call <id> dropTile "volume,wifi"        before wifi
+  //   omarchy-shell shell call <id> dropTile "volume,wifi,after"    after it
   function dropTile(text) {
     var parts = String(text || "").split(",")
-    if (parts.length !== 2) return "usage: dropTile <movedId>,<targetId>"
+    if (parts.length < 2) return "usage: dropTile <movedId>,<anchorId>[,after]"
     root.draggingId = parts[0].trim()
-    root.dropTargetId = parts[1].trim()
+    root.dropPlan = { anchorId: parts[1].trim(), after: (parts[2] || "").trim() === "after" }
     root.endDrag()
     return Model.gridIds(root.settings, root.available, root.editing).join(" ")
   }
@@ -1664,7 +1695,10 @@ Item {
   // grid: letting one wander would fight its own geometry binding. The tile
   // is drawn offset instead, and only the settings change on drop.
   property string draggingId: ""
-  property string dropTargetId: ""
+  // Where the drop would land: an anchor tile and which side of it, plus the
+  // line to draw for it. Null while the pointer is over nothing that can take
+  // a drop, in which case the last real plan stands.
+  property var dropPlan: null
   property real dragDX: 0
   property real dragDY: 0
 
@@ -1680,7 +1714,7 @@ Item {
     root.dragStartX = start.x
     root.dragStartY = start.y
     root.draggingId = id
-    root.dropTargetId = ""
+    root.dropPlan = null
     root.dragDX = 0
     root.dragDY = 0
   }
@@ -1697,13 +1731,17 @@ Item {
     root.dragPointX = point.x
     root.dragPointY = point.y
 
-    var over = Model.tileAtPoint(root.grid.cells, point.x, point.y, root.draggingId)
-    // Over its own slot means "put it back", so the target clears. Over a
-    // heading or a gap means nothing in particular, so the last real target
-    // stands rather than flickering off each time the pointer crosses a few
-    // pixels of background.
-    if (over === "self") root.dropTargetId = ""
-    else if (over !== "") root.dropTargetId = over
+    root.applyPlan(Model.dropPlan(root.grid.cells, point.x, point.y,
+                                  root.draggingId, root.gap, root.contentWidth))
+  }
+
+  // Over its own slot means "put it back", so the plan clears. Over a heading
+  // or a gap means nothing in particular, so the last real plan stands rather
+  // than flickering off each time the pointer crosses a few pixels of
+  // background.
+  function applyPlan(plan) {
+    if (plan === null) return
+    root.dropPlan = plan.self === true ? null : plan
   }
 
   // Auto-scroll while dragging near the top or bottom of the visible grid,
@@ -1719,9 +1757,8 @@ Item {
     if (delta === 0) return
     root.dragPointY += delta
     root.dragDY = root.dragPointY - root.dragStartY
-    var over = Model.tileAtPoint(root.grid.cells, root.dragPointX, root.dragPointY, root.draggingId)
-    if (over === "self") root.dropTargetId = ""
-    else if (over !== "") root.dropTargetId = over
+    root.applyPlan(Model.dropPlan(root.grid.cells, root.dragPointX, root.dragPointY,
+                                  root.draggingId, root.gap, root.contentWidth))
   }
 
   Timer {
@@ -1733,14 +1770,14 @@ Item {
 
   function endDrag() {
     var moved = root.draggingId
-    var target = root.dropTargetId
+    var plan = root.dropPlan
     root.draggingId = ""
-    root.dropTargetId = ""
+    root.dropPlan = null
     root.dragDX = 0
     root.dragDY = 0
-    if (!moved || !target || moved === target) return
-    root.saveSettings(Model.withTileDroppedOn(root.settings, moved, target))
-    var ids = Model.gridIds(root.settings, root.available, true)
+    if (!moved || !plan || !plan.anchorId) return
+    root.saveSettings(Model.withTileMovedNextTo(root.settings, moved, plan.anchorId, plan.after === true))
+    var ids = Model.gridIds(root.settings, root.available, root.editing)
     var index = ids.indexOf(moved)
     if (index >= 0) root.cursor = index
   }
@@ -2016,7 +2053,6 @@ Item {
                 readonly property bool hasCursor: root.cursor === index
                 readonly property bool enabledInSettings: Model.tileEnabled(root.settings, modelData)
                 readonly property bool beingDragged: root.draggingId === modelData
-                readonly property bool isDropTarget: root.dropTargetId === modelData
                 x: geometry ? geometry.x : 0
                 y: geometry ? geometry.y : 0
                 width: geometry ? geometry.width : 0
@@ -2067,7 +2103,6 @@ Item {
                     onChevronClicked: root.openPanel(cell.modelData)
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
-                    dropTarget: cell.isDropTarget
                     onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
                     onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
@@ -2132,7 +2167,6 @@ Item {
                     }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
-                    dropTarget: cell.isDropTarget
                     onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
                     onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
@@ -2169,7 +2203,6 @@ Item {
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
-                    dropTarget: cell.isDropTarget
                     onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
                     onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
@@ -2200,7 +2233,6 @@ Item {
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
-                    dropTarget: cell.isDropTarget
                     onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
                     onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
@@ -2226,7 +2258,6 @@ Item {
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
-                    dropTarget: cell.isDropTarget
                     onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
                     onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
@@ -2256,7 +2287,6 @@ Item {
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: root.editing
-                    dropTarget: cell.isDropTarget
                     onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
                     onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
@@ -2295,7 +2325,6 @@ Item {
                     onClicked: { root.cursor = cell.index; root.activateOption(optionId) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: false
-                    dropTarget: cell.isDropTarget
                     onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
                     onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
@@ -2303,6 +2332,59 @@ Item {
                 }
               }
             }
+
+            // Where the tile will land. A line in the gap, not an outline
+            // on a tile: with mixed widths the question is which side of
+            // what, and an outline cannot say that. It runs the full width
+            // when the move is above or below a row, and stands up between
+            // two tiles that will sit side by side.
+            Rectangle {
+              id: dropLine
+              // A plan can name a place without describing one: the IPC seam
+              // sets an anchor and a side so a drop can be driven from a
+              // script, with no geometry to draw. Read the geometry once and
+              // let the whole mark stand or fall on it.
+              readonly property var mark: root.dropPlan && root.dropPlan.indicator
+                ? root.dropPlan.indicator : null
+
+              visible: mark !== null && root.draggingId !== ""
+              z: 20
+              color: root.accent
+              radius: Math.min(width, height) / 2
+              x: mark ? mark.x : 0
+              y: mark ? mark.y : 0
+              width: mark ? mark.width : 0
+              height: mark ? mark.height : 0
+
+              Behavior on x { enabled: !root.reduceMotion; NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+              Behavior on y { enabled: !root.reduceMotion; NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+              Behavior on width { enabled: !root.reduceMotion; NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+              Behavior on height { enabled: !root.reduceMotion; NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+
+              // A cap at each end, so a line between two tiles reads as an
+              // insertion mark rather than as a border someone left on.
+              Rectangle {
+                width: dropLine.width < dropLine.height ? Style.space(7) : Style.space(3)
+                height: dropLine.width < dropLine.height ? Style.space(3) : Style.space(7)
+                radius: Math.min(width, height) / 2
+                color: dropLine.color
+                anchors.horizontalCenter: dropLine.horizontalCenter
+                anchors.top: dropLine.top
+                anchors.topMargin: dropLine.width < dropLine.height ? 0 : -height / 2 + dropLine.height / 2
+                visible: dropLine.width < dropLine.height
+              }
+              Rectangle {
+                width: dropLine.width < dropLine.height ? Style.space(7) : Style.space(3)
+                height: dropLine.width < dropLine.height ? Style.space(3) : Style.space(7)
+                radius: Math.min(width, height) / 2
+                color: dropLine.color
+                anchors.horizontalCenter: dropLine.horizontalCenter
+                anchors.bottom: dropLine.bottom
+                visible: dropLine.width < dropLine.height
+              }
+            }
+
+
             }
           }
 

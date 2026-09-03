@@ -223,6 +223,21 @@ The drop target is found from the grid's geometry, not by asking what is under
 the pointer: the dragged tile is painted away from its slot, so a hit test
 against what is drawn answers with the thing being dragged.
 
+A drop is an insertion point, never a swap. "Put it where that one is" has no
+meaning once tiles have different widths: a full-width row and a
+quarter-width square cannot trade places. `dropPlan` answers with an anchor
+tile and which side of it, following the grid's own shape. A full-width block
+occupies a whole row, so it can only go above or below something, and so can
+anything dropped onto one; between two narrow tiles the answer is left or
+right. Which side comes from the half of the target the pointer is in, and
+for a vertical move the anchor is the first or last tile of that row rather
+than whichever tile the pointer happened to be over.
+
+The mark is a line in the gap rather than an outline on a tile, because an
+outline cannot say which side of something a tile will land on. It is drawn
+as a sibling of the tiles, not inside the `Repeater`: a `Repeater` only
+instantiates its delegate, so a plain child of one renders nowhere at all.
+
 Edit mode shows the card's own order first, then what is left to add. It used
 to group everything by category, which made reordering meaningless: moving a
 control one place in the settings could move it past something in a different

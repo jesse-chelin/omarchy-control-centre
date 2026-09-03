@@ -93,9 +93,13 @@ mixer and monitor layout. The card never tries to replace those.
 Press `,` or click the gear. Your card comes first, in the order it actually
 uses, and everything else sits below it grouped by what it does.
 
-Drag a control to move it. Drag one up from the groups below and it joins your
-card where you dropped it, and dragging near the top or bottom scrolls the
-list while you hold it. Enter or a click shows and hides the one under the
+Drag a control to move it, and a line shows where it will land. Two narrow
+controls sit side by side, so between them the line stands up and marks which
+side you are on. A full-width control takes a whole row, so it can only go
+above or below, and so can anything dropped onto one: there the line lies flat
+across the card. Drag one up from the groups below and it joins your card
+where you dropped it; drag one down among the hidden ones and it leaves.
+Dragging near the top or bottom scrolls the list while you hold it. Enter or a click shows and hides the one under the
 cursor, and Ctrl with the arrows moves it for anyone who would rather not
 drag. The card saves as you go.
 
