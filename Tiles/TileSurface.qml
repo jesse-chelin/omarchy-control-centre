@@ -153,9 +153,9 @@ BorderSurface {
       if (m.button === Qt.RightButton) root.rightClicked()
       else root.clicked()
     }
-    // A toggle tile swallows the wheel on purpose: scrolling over a switch
-    // must never flip it, and the slider tiles own their own wheel handling.
-    onWheel: function(w) { w.accepted = true }
+    // No wheel handler on purpose. A tile has nothing to do with a wheel, and
+    // anything declared here would be accepted and stop there, which left the
+    // grid scrolling only over the gaps between tiles.
   }
 
   PanelToolTip {

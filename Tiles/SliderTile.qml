@@ -19,6 +19,12 @@ TileSurface {
   property bool muted: false
   property bool chevron: false
   property string chevronTooltip: ""
+
+  // A slider takes the wheel and changes its value, which is the right thing
+  // on a card that fits. On a card long enough to scroll it is not: someone
+  // scrolling past the volume row would turn the volume up instead. When the
+  // grid can scroll, the wheel scrolls.
+  property bool wheelScrolls: false
   // What the number on the right says. Percent suits volume and brightness;
   // warmth wants Kelvin, which is not a percentage of anything.
   property string valueText: Math.round((slider.dragging ? slider.liveValue : root.value) * 100) + "%"
@@ -28,6 +34,7 @@ TileSurface {
   signal glyphClicked()
   signal chipClicked()
   signal chevronClicked()
+  signal scrollRequested(int delta)
   signal moved(real value)
   signal released(real value)
 
@@ -170,6 +177,15 @@ TileSurface {
       onMoved: function(v) { root.moved(v) }
       onReleased: function(v) { root.released(v) }
       onRightClicked: root.glyphClicked()
+
+      // Buttons pass straight through, so dragging the slider still works;
+      // only the wheel is taken, and only while the grid can use it.
+      MouseArea {
+        anchors.fill: parent
+        enabled: root.wheelScrolls
+        acceptedButtons: Qt.NoButton
+        onWheel: function(wheel) { root.scrollRequested(wheel.angleDelta.y) }
+      }
     }
   }
 }

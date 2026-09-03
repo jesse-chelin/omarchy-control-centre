@@ -353,6 +353,22 @@ with an empty key name, so a digit combination cannot be checked against them,
 and on Omarchy those are the workspace switches. Refusing beats offering a
 check that cannot be made.
 
+## The wheel
+
+A `MouseArea` that declares `onWheel` accepts the event, and an accepted wheel
+event stops there. The tile surface had one, added to stop a scroll over a
+switch flipping it, and the result was a grid that scrolled only over the gaps
+between tiles. A tile has nothing to do with a wheel, so it declares no
+handler at all and the event reaches the grid.
+
+That leaves one real consumer, `PanelSlider`, which turns the wheel into a
+value. On a card that fits, that is the right thing. On a card long enough to
+scroll it is not: someone scrolling past the volume row would turn the volume
+up instead. So while the grid can scroll, a wheel-only `MouseArea` covers the
+slider and scrolls the card instead. `acceptedButtons: Qt.NoButton` is what
+keeps presses falling through to the slider underneath, so dragging still
+works; wheel events are delivered to a MouseArea regardless of that property.
+
 ## Motion
 
 The card's resting position is derived from its own width and height: it is

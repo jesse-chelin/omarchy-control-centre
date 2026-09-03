@@ -60,6 +60,7 @@ another bar panel puts it away (and the other way round). Turn it off with
 | Key | Action |
 |---|---|
 | Arrows, `h` `j` `k` `l` | Move between tiles |
+| Wheel | Scrolls a long card; over a slider on a card that fits, changes its value |
 | Enter, Space | Flip the control under the cursor |
 | Shift+Enter, `o` | Open the stock panel behind the tile |
 | Left, Right, `+`, `-` | Move a slider by one step, or pick within a tile |

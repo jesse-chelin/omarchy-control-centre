@@ -1348,6 +1348,15 @@ Item {
   // The grid lives in this same file, so it is addressed directly. Handing a
   // function reference around instead means holding one across a plugin
   // reload, and calling it after the object behind it has gone.
+  // One wheel notch, in the direction the wheel turned. Only reached from a
+  // control that had to take the wheel to keep it off its own value.
+  function scrollByWheel(delta) {
+    if (!scroller || scroller.contentHeight <= scroller.height) return
+    var step = Style.space(48)
+    var next = scroller.contentY - (delta > 0 ? step : -step)
+    scroller.contentY = Math.max(0, Math.min(scroller.contentHeight - scroller.height, next))
+  }
+
   function revealCursor() {
     if (scroller) scroller.revealCell(root.cursor)
   }
@@ -2326,6 +2335,8 @@ Item {
                     foreground: root.foreground
                     accent: root.accent
                     fontFamily: root.fontFamily
+                    wheelScrolls: scroller.contentHeight > scroller.height
+                    onScrollRequested: function(delta) { root.scrollByWheel(delta) }
                     onGlyphClicked: {
                       root.cursor = cell.index
                       if (isVolume) root.toggleOutputMute()
