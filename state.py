@@ -23,11 +23,35 @@ the invoking environment cannot inject code into this process.
 import errno
 import json
 import os
+import secrets
 import stat
 import sys
-import tempfile
 
 MAX_BYTES = 65536
+
+
+def open_parent(path):
+    """The directory the file lives in, held open, and the file's own name.
+
+    Every step after this one is relative to that descriptor rather than to a
+    pathname, so the directory cannot be swapped between the check and the
+    open, or between the write and the rename. O_NOFOLLOW refuses a symlinked
+    directory outright: a settings file is not somewhere else.
+    """
+    absolute = os.path.abspath(path)
+    directory = os.path.dirname(absolute) or "/"
+    name = os.path.basename(absolute)
+    if not name or name in (".", ".."):
+        raise OSError("%s does not name a file" % path)
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        info = os.fstat(fd)
+        if info.st_uid != os.getuid():
+            raise OSError("%s is owned by another user" % directory)
+    except OSError:
+        os.close(fd)
+        raise
+    return fd, name
 
 
 def log(message):
@@ -42,27 +66,44 @@ def refuse_read(reason, detail=""):
 
 def read(path):
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+        dir_fd, name = open_parent(path)
     except FileNotFoundError:
         return refuse_read("no settings saved yet")
     except OSError as error:
-        if getattr(error, "errno", None) == errno.ELOOP:
-            return refuse_read("it is a symlink, which is never followed", path)
-        return refuse_read("it could not be opened", "%s: %s" % (path, error))
+        # O_NOFOLLOW with O_DIRECTORY answers ENOTDIR for a symlink on Linux,
+        # because the directory test runs after the link is refused. Both mean
+        # the same thing here: what is at that name is not a directory this
+        # will open.
+        if getattr(error, "errno", None) in (errno.ELOOP, errno.ENOTDIR):
+            return refuse_read("its directory is a symlink, which is never followed", path)
+        return refuse_read("its directory could not be opened", "%s: %s" % (path, error))
 
     try:
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode):
-            return refuse_read("it is not a regular file", path)
-        if info.st_uid != os.getuid():
-            return refuse_read("it is owned by another user", path)
-        if info.st_size > MAX_BYTES:
-            return refuse_read("it is larger than %d bytes" % MAX_BYTES, path)
-        raw = os.read(fd, MAX_BYTES + 1)
-        if len(raw) > MAX_BYTES:
-            return refuse_read("it grew past %d bytes while being read" % MAX_BYTES, path)
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                         dir_fd=dir_fd)
+        except FileNotFoundError:
+            return refuse_read("no settings saved yet")
+        except OSError as error:
+            if getattr(error, "errno", None) == errno.ELOOP:
+                return refuse_read("it is a symlink, which is never followed", path)
+            return refuse_read("it could not be opened", "%s: %s" % (path, error))
+
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
+                return refuse_read("it is not a regular file", path)
+            if info.st_uid != os.getuid():
+                return refuse_read("it is owned by another user", path)
+            if info.st_size > MAX_BYTES:
+                return refuse_read("it is larger than %d bytes" % MAX_BYTES, path)
+            raw = os.read(fd, MAX_BYTES + 1)
+            if len(raw) > MAX_BYTES:
+                return refuse_read("it grew past %d bytes while being read" % MAX_BYTES, path)
+        finally:
+            os.close(fd)
     finally:
-        os.close(fd)
+        os.close(dir_fd)
 
     try:
         text = raw.decode("utf-8")
@@ -105,42 +146,42 @@ def write(path):
     directory = os.path.dirname(os.path.abspath(path)) or "."
     try:
         ensure_private_dir(directory)
+        dir_fd, name = open_parent(path)
     except OSError as error:
         return refuse_write(str(error))
 
-    # A symlink at the path is never replaced: os.replace would swap the link
-    # itself, which is harmless, but a link left there is a sign that
-    # something else is arranging the directory, and the safe answer is no.
-    try:
-        existing = os.lstat(path)
-    except FileNotFoundError:
-        existing = None
-    if existing is not None and not stat.S_ISREG(existing.st_mode):
-        return refuse_write("%s is not a regular file" % path)
-
     payload = (json.dumps(document, indent=2, sort_keys=False) + "\n").encode("utf-8")
-    # mkstemp creates O_EXCL with mode 0600, so the mode is right from the
-    # first byte rather than fixed after the fact.
-    fd, temp_path = tempfile.mkstemp(prefix=".control-centre.", suffix=".tmp", dir=directory)
+    temp = ".control-centre.%s.tmp" % secrets.token_hex(8)
     try:
-        os.write(fd, payload)
-        os.fsync(fd)
-        os.close(fd)
-        fd = -1
-        os.replace(temp_path, path)
-        dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        # A symlink at the name is never replaced. os.replace would swap the
+        # link itself, which is harmless, but a link left there is a sign that
+        # something else is arranging the directory, and the answer is no.
         try:
-            os.fsync(dir_fd)
+            existing = os.lstat(name, dir_fd=dir_fd)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and not stat.S_ISREG(existing.st_mode):
+            return refuse_write("%s is not a regular file" % path)
+
+        # Unpredictable name, created exclusively, mode set at creation, and
+        # every step relative to the directory opened above.
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                     0o600, dir_fd=dir_fd)
+        try:
+            os.write(fd, payload)
+            os.fsync(fd)
         finally:
-            os.close(dir_fd)
-    except OSError as error:
-        if fd >= 0:
             os.close(fd)
+        os.rename(temp, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        os.fsync(dir_fd)
+    except OSError as error:
         try:
-            os.unlink(temp_path)
+            os.unlink(temp, dir_fd=dir_fd)
         except OSError:
             pass
         return refuse_write("could not write %s: %s" % (path, error))
+    finally:
+        os.close(dir_fd)
     return 0
 
 

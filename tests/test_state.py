@@ -106,6 +106,22 @@ with tempfile.TemporaryDirectory() as tmp:
     dmode = stat.S_IMODE(nested.parent.stat().st_mode)
     check(dmode == 0o700, 'state directory landed with mode %o, expected 700' % dmode)
 
+    # A symlinked directory is refused on both sides. The file is reached
+    # through a descriptor on its own directory, so a directory swapped for a
+    # link somewhere else cannot redirect either the read or the rename.
+    real = base / 'real'
+    real.mkdir(mode=0o700)
+    link = base / 'link'
+    link.symlink_to(real)
+    code, out = read(link / 'cc.json')
+    check('symlink' in rejected(out), 'a symlinked directory was not refused on read')
+    check(write(link / 'cc.json', b'{}') != 0, 'a symlinked directory was accepted on write')
+    check(not (real / 'cc.json').exists(), 'the write landed through the link anyway')
+
+    # And no temp file is left behind by a refusal.
+    leftovers = [f.name for f in base.iterdir() if f.name.endswith('.tmp')]
+    check(leftovers == [], 'temp files were left behind: %s' % leftovers)
+
 if problems:
     print('\n'.join(problems))
     sys.exit(1)

@@ -27,9 +27,9 @@ directory, so nothing in the environment can inject code into this process.
 import errno
 import os
 import re
+import secrets
 import stat
 import sys
-import tempfile
 
 MAX_BYTES = 512 * 1024
 PLUGIN_ID = "io.github.jesse-chelin.control-centre"
@@ -54,6 +54,29 @@ NAMED_KEYS = {
     "RETURN", "TAB", "BACKSPACE", "DELETE", "INSERT", "HOME", "END",
     "PRIOR", "NEXT", "UP", "DOWN", "LEFT", "RIGHT", "PRINT",
 }
+
+
+def open_parent(path):
+    """The directory the file lives in, held open, and the file's own name.
+
+    Everything after this is relative to that descriptor rather than to a
+    pathname, so no step can be redirected by swapping a directory between the
+    check and the act. This is the user's Hyprland config directory; it is not
+    somewhere else, so a symlink in its place is refused.
+    """
+    absolute = os.path.abspath(path)
+    directory = os.path.dirname(absolute) or "/"
+    name = os.path.basename(absolute)
+    if not name or name in (".", ".."):
+        raise OSError("%s does not name a file" % path)
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        if os.fstat(fd).st_uid != os.getuid():
+            raise OSError("the bindings directory is owned by another user")
+    except OSError:
+        os.close(fd)
+        raise
+    return fd, name
 
 
 def fail(reason):
@@ -82,9 +105,9 @@ def valid_combo(combo):
     return key in NAMED_KEYS
 
 
-def read_config(path):
+def read_config(dir_fd, name):
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dir_fd)
     except FileNotFoundError:
         return "", None
     except OSError as error:
@@ -157,40 +180,43 @@ def other_bindings(text):
     return found
 
 
-def write_config(path, text, mode, original):
-    directory = os.path.dirname(os.path.abspath(path)) or "."
-    backup = path + ".before-control-centre"
+def write_config(dir_fd, name, text, mode, original):
+    backup = name + ".before-control-centre"
     # The bytes read_config already read and checked, rather than a second
-    # open of the same path: re-reading it here would answer a question that
-    # has been asked once, and would answer it about whatever is at the path
-    # now, symlink included. A mode means read_config opened a real file, so
-    # it is also how "there was a file to copy" is known.
-    if mode is not None and not os.path.exists(backup):
-        fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    # open of the same name: re-reading would answer a question already asked,
+    # and would answer it about whatever is there now. A mode means
+    # read_config opened a real file, so it is also how "there was something
+    # to copy" is known.
+    if mode is not None:
         try:
-            os.write(fd, original.encode("utf-8"))
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-
-    fd, temp = tempfile.mkstemp(prefix=".control-centre-bind.", suffix=".tmp", dir=directory)
-    try:
-        os.write(fd, text.encode("utf-8"))
-        os.fsync(fd)
-        os.fchmod(fd, mode if mode is not None else 0o644)
-        os.close(fd)
-        fd = -1
-        os.replace(temp, path)
-        dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
-    except OSError as error:
+            fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                         0o600, dir_fd=dir_fd)
+        except FileExistsError:
+            fd = -1          # kept from the first write, never refreshed
         if fd >= 0:
-            os.close(fd)
+            try:
+                os.write(fd, original.encode("utf-8"))
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+
+    temp = ".control-centre-bind.%s.tmp" % secrets.token_hex(8)
+    try:
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                     0o600, dir_fd=dir_fd)
         try:
-            os.unlink(temp)
+            os.write(fd, text.encode("utf-8"))
+            os.fsync(fd)
+            # Widened to the file's own mode only once the bytes are down, so
+            # it is never briefly readable by anyone it was not already.
+            os.fchmod(fd, mode if mode is not None else 0o644)
+        finally:
+            os.close(fd)
+        os.rename(temp, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        os.fsync(dir_fd)
+    except OSError as error:
+        try:
+            os.unlink(temp, dir_fd=dir_fd)
         except OSError:
             pass
         raise OSError("could not write the bindings file: %s" % error)
@@ -218,7 +244,24 @@ def main(argv):
     action, path = argv[1], argv[2]
 
     try:
-        original, mode = read_config(path)
+        dir_fd, name = open_parent(path)
+    except OSError as error:
+        # O_NOFOLLOW with O_DIRECTORY answers ENOTDIR for a symlink on Linux,
+        # because the directory test runs after the link is refused. Both mean
+        # what is at that name is not a directory this will open.
+        if getattr(error, "errno", None) in (errno.ELOOP, errno.ENOTDIR):
+            return fail("the bindings directory is a symlink, which is never followed")
+        return fail("the bindings directory could not be opened: %s" % error)
+
+    try:
+        return act(action, argv, dir_fd, name)
+    finally:
+        os.close(dir_fd)
+
+
+def act(action, argv, dir_fd, name):
+    try:
+        original, mode = read_config(dir_fd, name)
     except OSError as error:
         return fail(str(error))
 
@@ -240,7 +283,7 @@ def main(argv):
         text = body.rstrip("\n") + "\n"
 
     try:
-        write_config(path, text, mode, original)
+        write_config(dir_fd, name, text, mode, original)
     except OSError as error:
         return fail(str(error))
 

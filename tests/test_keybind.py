@@ -132,6 +132,21 @@ with tempfile.TemporaryDirectory() as tmp:
     check(END not in path.read_text(), "a stray end marker was left behind")
     check(ORIGINAL in path.read_text(), "a stray end marker took the file with it")
 
+    # A symlinked directory is refused. The file is reached through a
+    # descriptor on its own directory, so a directory replaced by a link
+    # cannot redirect the write or the rename that follows it.
+    realdir = base / "realdir"
+    realdir.mkdir()
+    (realdir / "bindings.lua").write_text(ORIGINAL)
+    dirlink = base / "dirlink"
+    dirlink.symlink_to(realdir)
+    code, out = run("set", str(dirlink / "bindings.lua"), "SUPER + BACKSLASH")
+    check(code != 0 and "symlink" in out, "a symlinked directory was not refused")
+    check((realdir / "bindings.lua").read_text() == ORIGINAL,
+          "the write landed through the linked directory anyway")
+    check([f.name for f in realdir.iterdir() if f.name.endswith(".tmp")] == [],
+          "a temp file was left behind in the linked directory")
+
     # The pattern that recognises the managed line has to match the line the
     # writer actually writes; they are two literals that can drift apart.
     check(keybind.BIND_LINE.match(keybind.bind_line("SUPER + BACKSLASH")) is not None,

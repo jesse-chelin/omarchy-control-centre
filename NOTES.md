@@ -180,6 +180,26 @@ so it is recognised rather than learned, and Omarchy's own binding for it reads
 author's to spell. The rule, if a label is ever added: match Omarchy where
 Omarchy has a word for it, and only otherwise choose.
 
+## A name is not a place
+
+Both Python helpers used to work on pathnames: open the file by its path,
+write a temp beside it by its path, rename one over the other. Every one of
+those steps resolves the directory again, so a directory swapped between two
+of them redirects the step that follows.
+
+They now open the containing directory once, with `O_DIRECTORY | O_NOFOLLOW`,
+check it is ours, and do everything else relative to that descriptor: the
+read, the `lstat`, the temp file, the rename, the `fsync`. The temp name is
+random rather than predictable, created `O_EXCL` with its mode set at
+creation, and the bindings file's own mode is only widened after the bytes are
+down, so it is never briefly readable by anyone it was not already.
+
+One measured surprise. `O_NOFOLLOW | O_DIRECTORY` on a symlink answers
+**ENOTDIR** on Linux, not ELOOP, because the directory test runs after the
+link has been refused. A refusal branch that only knows ELOOP therefore lets
+the symlink through into a generic error, which is how the first version of
+this passed its own test by saying the wrong thing.
+
 ## Bounds belong on the producing side
 
 Read across the marketplace's own review queue, the concern raised more than
