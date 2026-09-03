@@ -164,7 +164,7 @@ TileSurface {
       enabled: !root.editing
       opacity: root.muted ? 0.5 : 1
       trackColor: Style.selectedFillFor(root.foreground, root.accent)
-      fillColor: root.foreground
+      fillColor: root.muted ? Qt.darker(root.foreground, 1.6) : root.stateColor
       knobColor: root.foreground
       tickColor: Color.popups.background
       onMoved: function(v) { root.moved(v) }

@@ -19,7 +19,7 @@ TileSurface {
   signal chevronClicked()
 
   readonly property color dim: Qt.darker(foreground, 1.5)
-  readonly property color glyphColor: urgent ? Color.urgent : (active ? Style.selectedStateColor(foreground, accent) : dim)
+  readonly property color glyphColor: urgent ? Color.urgent : (active ? root.stateColor : dim)
   readonly property int pad: Style.spacing.xl
 
 

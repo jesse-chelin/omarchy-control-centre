@@ -28,6 +28,27 @@ BorderSurface {
   readonly property bool dimmed: hiddenInEdit
   property color foreground: Color.popups.text
   property color accent: Color.accent
+
+  // What "on" is painted in.
+  //
+  // The shell's shared `selected` token is written by the theme template as
+  // the theme's own foreground, for every theme, so following it leaves a card
+  // whose entire job is showing what is on rendered in exactly one colour.
+  // That token is about generic control chrome; this card is about state, and
+  // Omarchy already spends the accent on state elsewhere: the mark under a bar
+  // icon whose panel is open, and the border of this very card.
+  //
+  // So the accent marks what is on, when the theme has an accent worth
+  // spending. Two ways it might not: a theme that never set one, where the
+  // accent is the foreground; and a theme whose accent is a neutral, where an
+  // "on" tile would come out a paler wash than the plain foreground gives.
+  // Either way the shared token is the better answer.
+  readonly property bool hasColourAccent: accent.hsvSaturation > 0.15
+    && (Math.abs(accent.r - foreground.r) + Math.abs(accent.g - foreground.g)
+      + Math.abs(accent.b - foreground.b) > 0.15)
+  readonly property color stateColor: hasColourAccent
+    ? accent
+    : Style.selectedStateColor(foreground, accent)
   property string tooltip: ""
   property string fontFamily: Style.font.family
 
@@ -61,12 +82,14 @@ BorderSurface {
   // themes give normal chrome a stronger border (0.4) than hover-cursor
   // (0.25), so a bordered tile would go *fainter* under the cursor, and the
   // hover fill is dimmer than the selected fill it would be replacing.
-  color: active ? Style.selectedFillFor(foreground, accent) : Style.normalFillFor(foreground, accent)
+  color: active ? Util.alpha(stateColor, Style.selectedFillAlpha) : Style.normalFillFor(foreground, accent)
   borderSpec: dropTarget
     ? Border.flat(accent, Math.max(2, Style.space(2)))
     : (hasCursor
       ? Border.flat(Style.focusStateColor(foreground, accent), Math.max(1, Style.focusBorderWidth))
-      : (active ? Border.controlSpec("selected", foreground, accent) : Border.controlSpec("normal", foreground, accent)))
+      : (active
+        ? Border.flat(Util.alpha(stateColor, 0.5), Style.normalBorderWidth)
+        : Border.controlSpec("normal", foreground, accent)))
 
   Behavior on color { enabled: !root.reduceMotion; ColorAnimation { duration: 100 } }
 

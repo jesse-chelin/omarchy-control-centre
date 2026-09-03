@@ -13,6 +13,7 @@ Anything deeper opens the stock Omarchy panel it belongs to.
 |---|---|
 | One surface | Thirty-eight controls in one card, on the focused monitor |
 | Native | Built from the shell's own components, so it follows your theme exactly |
+| Reads at a glance | Your theme's accent marks what is on, so the card answers "what have I left running" without being read |
 | Never a duplicate | Wi-Fi lists, Bluetooth pairing, the per-app mixer and monitor layout stay in the stock panels, one chevron away |
 | Live both ways | A tile reflects a change made anywhere else, and a change made here shows up everywhere else |
 | Keyboard first | Arrows, digits, Tab and Enter reach everything; the mouse does too |

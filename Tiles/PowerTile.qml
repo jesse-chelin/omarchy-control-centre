@@ -106,7 +106,7 @@ TileSurface {
           text: root.profiles.length <= 2 ? Model.profileLabel(modelData) : ""
           tooltipText: Model.profileLabel(modelData)
           fontSize: Style.font.caption
-          foreground: root.foreground
+          foreground: root.shownProfile === modelData ? root.stateColor : root.foreground
           accent: root.accent
           fontFamily: root.fontFamily
           horizontalPadding: Style.spacing.lg

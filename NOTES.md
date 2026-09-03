@@ -297,6 +297,26 @@ for something the user has taken off their card is noise, and the mark had
 nowhere to sit that did not land on the control's own trailing content, which
 is right-aligned on exactly the wide rows where the mark wanted to go.
 
+## Where the accent goes
+
+The shell's shared `selected` token is written by the theme template as the
+theme's own foreground, for every theme, so a card built strictly on that
+token comes out in exactly one colour. That token governs generic control
+chrome; this card is about state, and Omarchy already spends the accent on
+state elsewhere: the mark under a bar icon whose panel is open, and the border
+of this card.
+
+So the accent marks what is on: an active control's fill, border and glyph, a
+slider's filled track, the chosen power profile, the current theme. Everything
+else stays neutral, which is what keeps that reading.
+
+Two themes cannot pay for it. One that never set an accent has the foreground
+in that slot, and one whose accent is a neutral would give an "on" tile a
+paler wash than the plain foreground does. Both fall back to the shared token,
+tested by saturation as well as by distance from the foreground. The White
+theme is the case that made this necessary: its accent is a mid grey, and
+following it made "on" weaker than it had been.
+
 ## Motion
 
 The card's resting position is derived from its own width and height: it is

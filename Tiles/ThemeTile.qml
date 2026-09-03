@@ -90,7 +90,7 @@ TileSurface {
           required property int index
           text: root.pretty(modelData)
           fontSize: Style.font.caption
-          foreground: root.foreground
+          foreground: root.shown === modelData ? root.stateColor : root.foreground
           accent: root.accent
           fontFamily: root.fontFamily
           horizontalPadding: Style.spacing.lg
