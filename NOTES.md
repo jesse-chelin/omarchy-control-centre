@@ -270,6 +270,33 @@ built-in one everywhere else, and the tile should not drag them back to it.
 An enabled third-party overlay whose id or name says what it is wins over the
 first-party plugin of the same kind.
 
+## The card settles, then stands still
+
+Availability is live: a song starting adds a full-width row, a recording
+ending takes a control away. Both of those move everything below them while
+someone is reaching for it. The grid is therefore built from a held copy of
+the availability map, which tracks the live one until the probes have all
+answered once and then stops until the card closes. `probesSettled` is the
+real condition rather than a timer: the hardware probe has returned, the flag
+probe has returned, and the monitor state has been read.
+
+## One label size, one card width
+
+Each tile label used to shrink to fit its own tile, which was kind to the
+longest label and unkind to the row it sat in: neighbours came out at two
+sizes. The card is sized instead so that the longest label in the catalogue
+fits at one size. That is what sets the 468 in `contentWidth`; shortening the
+longest label is the other way to buy it back.
+
+## A hidden control is not a control
+
+In edit mode a control that is not on the card draws as a catalogue entry:
+glyph, name, and the word Hidden. Drawing the real control and marking it was
+the first attempt, and it failed twice over. A working slider sitting at 100%
+for something the user has taken off their card is noise, and the mark had
+nowhere to sit that did not land on the control's own trailing content, which
+is right-aligned on exactly the wide rows where the mark wanted to go.
+
 ## Motion
 
 The card's resting position is derived from its own width and height: it is

@@ -15,8 +15,6 @@ TileSurface {
   property int subCursor: -1
   property bool busy: false
   property string error: ""
-  property bool editing: false
-  property bool enabledInSettings: true
 
   signal themeClicked(string name)
   signal themeHovered(int index)
@@ -25,7 +23,6 @@ TileSurface {
   readonly property string shown: pendingTheme !== "" ? pendingTheme : current
 
   active: false
-  dimmed: editing && !enabledInSettings
 
   // "matte-black" reads as a directory; "Matte Black" reads as a theme.
   function pretty(name) {
@@ -58,7 +55,7 @@ TileSurface {
       anchors.left: labelText.right
       anchors.leftMargin: Style.spacing.lg
       anchors.verticalCenter: labelText.verticalCenter
-      text: root.enabledInSettings ? root.pretty(root.current) : "Hidden"
+      text: root.pretty(root.current)
       color: root.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption

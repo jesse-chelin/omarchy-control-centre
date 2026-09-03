@@ -200,8 +200,21 @@ TestCase {
 
   function test_edit_mode_appends_the_option_rows() {
     var ids = Model.gridIds(Model.defaultSettings(), suite.allAvailable, true)
-    compare(ids[ids.length - 3], "opt-position")
+    compare(ids[ids.length - 4], "opt-position")
     compare(ids[ids.length - 1], "opt-pill")
+  }
+
+  function test_density_is_a_choice_with_a_default() {
+    compare(Model.defaultSettings().density, "comfortable")
+    compare(Model.nextDensity("comfortable"), "compact")
+    compare(Model.nextDensity("compact"), "comfortable")
+    compare(Model.nextDensity("nonsense"), "comfortable")
+    compare(Model.parseSettings('{"density":"tiny"}').settings.density, "comfortable",
+            "an unknown density falls back")
+    compare(Model.parseSettings('{"position":"centre"}').settings.density, "comfortable",
+            "an absent density keeps the default")
+    var compact = Model.withOption(Model.defaultSettings(), "density", "compact")
+    compare(Model.parseSettings(Model.serializeSettings(compact)).settings.density, "compact")
   }
 
   function test_layout_wraps_and_never_splits_a_wide_tile() {

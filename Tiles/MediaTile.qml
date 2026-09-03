@@ -16,8 +16,6 @@ TileSurface {
   property bool canGoPrevious: false
   property bool canGoNext: false
   property int subCursor: 1
-  property bool editing: false
-  property bool enabledInSettings: true
 
   signal transport(string action)
   signal controlHovered(int index)
@@ -28,7 +26,6 @@ TileSurface {
   readonly property int artSize: height - (borderTop + borderBottom) - Style.spacing.md * 2
 
   active: playing
-  dimmed: editing && !enabledInSettings
 
   Item {
     anchors.fill: parent

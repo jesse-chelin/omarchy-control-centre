@@ -9,14 +9,11 @@ TileSurface {
 
   property var actions: []   // [{ id, glyph, label, armed }]
   property int subCursor: 0
-  property bool editing: false
-  property bool enabledInSettings: true
 
   signal activated(string id)
   signal actionHovered(int index)
 
   active: false
-  dimmed: editing && !enabledInSettings
 
   Row {
     id: row

@@ -50,6 +50,7 @@ Item {
   property bool settingsLoaded: false
   property string settingsRejected: ""
   readonly property bool reduceMotion: settings.reduceMotion === true
+  readonly property bool compact: settings.density === "compact"
 
   // Where the card points when it was opened from the bar pill: the centre of
   // that icon, along the bar. -1 means it was summoned by key, and the
@@ -87,6 +88,7 @@ Item {
     root.armedId = ""
     root.tileErrors = ({})
     root.applyPayload(payloadJson)
+    root.holdAvailability()
     // Re-read on every open, not only at load, so a settings file edited or
     // removed by hand takes effect at the next summon rather than at the next
     // shell restart. Skipped while a write is in flight, because reading then
@@ -102,6 +104,7 @@ Item {
   }
 
   function close() {
+    if (root.hintVisible) root.dismissHint()
     root.opened = false
     root.editing = false
     root.armedId = ""
@@ -724,6 +727,7 @@ Item {
         var monitor = String(lines[5] || "").trim()
         root.focusedMonitor = Model.isMonitorName(monitor) ? monitor : ""
         root.brightnessAvailable = available && root.focusedMonitor !== ""
+        root.monitorProbed = true
         // While a write is in flight the local value is authoritative;
         // re-reading races the driver and bounces the slider.
         if (root.brightnessAvailable && !setBrightnessProc.running && !brightnessDebounce.running)
@@ -1053,13 +1057,18 @@ Item {
     }
   }
 
+  // The hint has done its job the moment someone uses the card, whatever they
+  // used it with, and it is done for good when that first visit ends. Hanging
+  // it off the key handler alone left it on screen forever for anyone who
+  // opens the card from the bar and clicks.
   function dismissHint() {
+    if (root.settings.hintSeen !== true) root.saveSettings(Model.withOption(root.settings, "hintSeen", true))
     if (!root.hintVisible) return
     root.hintVisible = false
-    if (root.settings.hintSeen !== true) root.saveSettings(Model.withOption(root.settings, "hintSeen", true))
   }
 
   function setEditing(value) {
+    root.dismissHint()
     root.editing = value === true
     root.cursor = 0
     root.resetSubCursor()
@@ -1109,22 +1118,46 @@ Item {
     session: true
   })
 
-  readonly property var gridIds: Model.gridIds(root.settings, root.available, root.editing)
+  // What the card shows is decided once the probes have answered, and then
+  // held until the card closes. Availability is a live thing: a song starting
+  // adds a full-width row, a recording ending takes a tile away, and either
+  // one moves everything below it while someone is reaching for it. The card
+  // settles, then stands still.
+  property var heldAvailable: root.available
+  readonly property bool probesSettled: root.hardwareLoaded
+    && Object.keys(root.flags).length > 0
+    && root.monitorProbed
+
+  property bool monitorProbed: false
+
+  function holdAvailability() {
+    root.heldAvailable = root.available
+  }
+
+  // Before the card is open, and while it is still settling just after, the
+  // held copy tracks the live one.
+  onAvailableChanged: if (!root.opened || !root.probesSettled) root.holdAvailability()
+  onProbesSettledChanged: if (root.probesSettled) root.holdAvailability()
+
+  readonly property var gridIds: Model.gridIds(root.settings, root.heldAvailable, root.editing)
   readonly property int cellWidth: Math.floor((root.contentWidth - root.gap * 3) / 4)
   readonly property int gap: Style.spacing.lg
+  // Comfortable is the shape the card was designed at. Compact drops the
+  // second line from the square tiles and tightens every row, so a full card
+  // still fits a small laptop without the grid having to scroll.
   readonly property var tileHeights: ({
-    toggle: Style.space(74),
-    action: Style.space(74),
-    slider: Style.space(62),
-    warmth: Style.space(62),
-    power: Style.space(66),
-    media: Style.space(76),
-    actions: Style.space(46),
-    session: Style.space(46),
+    toggle: Style.space(root.compact ? 54 : 74),
+    action: Style.space(root.compact ? 54 : 74),
+    slider: Style.space(root.compact ? 54 : 62),
+    warmth: Style.space(root.compact ? 54 : 62),
+    power: Style.space(root.compact ? 58 : 66),
+    media: Style.space(root.compact ? 62 : 76),
+    actions: Style.space(root.compact ? 40 : 46),
+    session: Style.space(root.compact ? 40 : 46),
     // The chips wrap, so the row grows with however many themes exist. Edit
     // mode does not draw them, so there it collapses to a label.
     theme: root.editing ? Style.space(44)
-      : Style.space(46) + Math.ceil(Math.max(1, root.themes.length) / 4) * Style.space(26),
+      : Style.space(root.compact ? 40 : 46) + Math.ceil(Math.max(1, root.themes.length) / 4) * Style.space(26),
     option: Style.space(44),
     header: Style.space(22)
   })
@@ -1184,6 +1217,10 @@ Item {
   // bar. shell.summon only reaches a bar widget that is mounted, so a tile
   // whose panel the user removed hides its chevron instead of pointing at
   // nothing.
+  function isAvailable(id) {
+    return root.heldAvailable && root.heldAvailable[id] === true
+  }
+
   function panelInBar(id) {
     if (!root.shell) return false
     var resolved = root.shell.pluginRegistry && typeof root.shell.pluginRegistry.resolveEnabledId === "function"
@@ -1343,6 +1380,7 @@ Item {
 
   // Enter, Space, or a click on the tile body.
   function activate(index) {
+    root.dismissHint()
     if (index < 0 || index >= root.gridIds.length) return
     var id = root.gridIds[index]
     var kind = Model.kindOf(id)
@@ -1368,6 +1406,7 @@ Item {
 
   function activateOption(id) {
     if (id === "opt-position") root.saveSettings(Model.withOption(root.settings, "position", Model.nextPosition(root.settings.position)))
+    else if (id === "opt-density") root.saveSettings(Model.withOption(root.settings, "density", Model.nextDensity(root.settings.density)))
     else if (id === "opt-motion") root.saveSettings(Model.withOption(root.settings, "reduceMotion", !root.reduceMotion))
     else if (id === "opt-pill") root.saveSettings(Model.withOption(root.settings, "barWidget", root.settings.barWidget !== true))
   }
@@ -1457,6 +1496,8 @@ Item {
       subCursor: root.subCursor,
       gridIds: root.gridIds,
       available: root.available,
+      held: root.heldAvailable,
+      settled: root.probesSettled,
       settings: root.settings,
       settingsLoaded: root.settingsLoaded,
       settingsRejected: root.settingsRejected,
@@ -1565,7 +1606,7 @@ Item {
   readonly property var borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
   readonly property string fontFamily: Style.font.family
   readonly property int padding: Style.spacing.popupPadding
-  readonly property int contentWidth: Math.min(Style.space(432), Math.max(Style.space(240), panel.width - Style.gapsOut * 2 - root.padding * 2 - Border.left(root.borderSpec) - Border.right(root.borderSpec)))
+  readonly property int contentWidth: Math.min(Style.space(468), Math.max(Style.space(240), panel.width - Style.gapsOut * 2 - root.padding * 2 - Border.left(root.borderSpec) - Border.right(root.borderSpec)))
   readonly property int headerHeight: Style.space(26)
 
   readonly property var bar: shell ? shell.bar : null
@@ -1577,6 +1618,26 @@ Item {
   readonly property bool barHidden: bar ? bar.barHidden === true : false
   readonly property int barSize: bar && bar.barSize ? bar.barSize : Style.bar.sizeHorizontal
   readonly property int barInset: barHidden ? 0 : barSize + Style.gapsOut
+
+  // What a control looks like in the catalogue when it is not on the card.
+  // Most glyphs come from the table; the ones that vary with live state are
+  // shown at rest, because a hidden control has no state worth reporting.
+  function catalogueGlyph(id) {
+    if (id === "wifi") return "󰤨"
+    if (id === "bluetooth") return "󰂯"
+    if (id === "dnd") return "󰂛"
+    if (id === "nightlight") return "󰔎"
+    if (id === "stayawake") return "󰅶"
+    if (id === "mic") return "󰍬"
+    if (id === "recording") return "󰻂"
+    if (id === "volume") return "󰕾"
+    if (id === "brightness") return "󰃠"
+    if (id === "power") return "󰂄"
+    if (id === "media") return "󰝚"
+    if (id === "actions") return "󰌾"
+    if (id === "session") return "󰐥"
+    return Model.glyphOf(id)
+  }
 
   function tileInfo(id) {
     var editing = root.editing
@@ -1654,7 +1715,10 @@ Item {
       info.subtitle = ""
       info.tooltip = root.actionTooltip(id)
     }
-    if (editing) info.tooltip = Model.tileEnabled(root.settings, id) ? "Enter hides this tile" : "Enter shows this tile"
+    // The chevron is discoverable; the two shortcuts that do the same thing
+    // are not, so the tile's own tooltip carries them.
+    if (info.chevron && info.tooltip !== "") info.tooltip += "  ·  Right-click opens the full panel"
+    if (editing) info.tooltip = Model.tileEnabled(root.settings, id) ? "Enter hides this control" : "Enter shows this control"
     return info
   }
 
@@ -2067,7 +2131,8 @@ Item {
                   y: cell.beingDragged ? root.dragDY : 0
                 }
 
-                sourceComponent: kind === "toggle" || kind === "action" ? toggleComp
+                sourceComponent: root.editing && !enabledInSettings && kind !== "option" && kind !== "header" ? catalogueComp
+                  : kind === "toggle" || kind === "action" ? toggleComp
                   : kind === "slider" || kind === "warmth" ? sliderComp
                   : kind === "power" ? powerComp
                   : kind === "media" ? mediaComp
@@ -2094,6 +2159,7 @@ Item {
                     hasCursor: cell.hasCursor
                     editing: root.editing
                     enabledInSettings: cell.enabledInSettings
+                    compact: root.compact
                     reduceMotion: root.reduceMotion
                     foreground: root.foreground
                     accent: root.accent
@@ -2139,6 +2205,7 @@ Item {
                     hasCursor: cell.hasCursor
                     editing: root.editing
                     enabledInSettings: cell.enabledInSettings
+                    compact: root.compact
                     reduceMotion: root.reduceMotion
                     foreground: root.foreground
                     accent: root.accent
@@ -2193,6 +2260,7 @@ Item {
                     hasCursor: cell.hasCursor
                     editing: root.editing
                     enabledInSettings: cell.enabledInSettings
+                    compact: root.compact
                     reduceMotion: root.reduceMotion
                     foreground: root.foreground
                     accent: root.accent
@@ -2224,6 +2292,7 @@ Item {
                     hasCursor: cell.hasCursor
                     editing: root.editing
                     enabledInSettings: cell.enabledInSettings
+                    compact: root.compact
                     reduceMotion: root.reduceMotion
                     foreground: root.foreground
                     accent: root.accent
@@ -2249,6 +2318,7 @@ Item {
                     hasCursor: cell.hasCursor
                     editing: root.editing
                     enabledInSettings: cell.enabledInSettings
+                    compact: root.compact
                     reduceMotion: root.reduceMotion
                     foreground: root.foreground
                     accent: root.accent
@@ -2278,6 +2348,7 @@ Item {
                     hasCursor: cell.hasCursor
                     editing: root.editing
                     enabledInSettings: cell.enabledInSettings
+                    compact: root.compact
                     reduceMotion: root.reduceMotion
                     foreground: root.foreground
                     accent: root.accent
@@ -2290,6 +2361,30 @@ Item {
                     onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
                     onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
                     onDragEnded: root.endDrag()
+                  }
+                }
+
+                Component {
+                  id: catalogueComp
+                  CatalogueTile {
+                    anchors.fill: parent
+                    glyph: root.catalogueGlyph(cell.modelData)
+                    label: Model.labelOf(cell.modelData)
+                    wide: Model.spanOf(cell.modelData) >= 4
+                    hasCursor: cell.hasCursor
+                    editing: root.editing
+                    enabledInSettings: cell.enabledInSettings
+                    compact: root.compact
+                    reduceMotion: root.reduceMotion
+                    foreground: root.foreground
+                    accent: root.accent
+                    fontFamily: root.fontFamily
+                    draggable: root.editing
+                    onClicked: { root.cursor = cell.index; root.activate(cell.index) }
+                    onDragStarted: function(item, pressX, pressY) { root.beginDrag(cell.modelData, item, pressX, pressY, gridItem) }
+                    onDragMoved: function(item, mouse) { root.updateDrag(item, mouse, gridItem) }
+                    onDragEnded: root.endDrag()
+                    onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                   }
                 }
 
@@ -2308,12 +2403,16 @@ Item {
                   OptionTile {
                     readonly property string optionId: cell.modelData
                     anchors.fill: parent
-                    label: optionId === "opt-position" ? "Position" : (optionId === "opt-motion" ? "Reduce motion" : "Bar pill")
+                    label: Model.labelOf(optionId)
                     description: optionId === "opt-position" ? "Where the card opens"
-                      : (optionId === "opt-motion" ? "No slides, fades or pulses" : "A launcher in the bar, for the mouse")
-                    isChoice: optionId === "opt-position"
-                    choices: [{ value: "bar-end", label: "Bar end" }, { value: "centre", label: "Centre" }]
-                    value: root.settings.position
+                      : optionId === "opt-density" ? "How much room each control takes"
+                      : optionId === "opt-motion" ? "No slides, fades or pulses"
+                      : "A launcher in the bar, for the mouse"
+                    isChoice: optionId === "opt-position" || optionId === "opt-density"
+                    choices: optionId === "opt-density"
+                      ? [{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]
+                      : [{ value: "bar-end", label: "Bar end" }, { value: "centre", label: "Centre" }]
+                    value: optionId === "opt-density" ? root.settings.density : root.settings.position
                     checked: optionId === "opt-motion" ? root.reduceMotion : root.settings.barWidget === true
                     hasCursor: cell.hasCursor
                     reduceMotion: root.reduceMotion
@@ -2321,7 +2420,11 @@ Item {
                     accent: root.accent
                     fontFamily: root.fontFamily
                     onActivated: { root.cursor = cell.index; root.activateOption(optionId) }
-                    onChoiceClicked: function(v) { root.cursor = cell.index; root.saveSettings(Model.withOption(root.settings, "position", v)) }
+                    onChoiceClicked: function(v) {
+                      root.cursor = cell.index
+                      root.saveSettings(Model.withOption(root.settings,
+                        optionId === "opt-density" ? "density" : "position", v))
+                    }
                     onClicked: { root.cursor = cell.index; root.activateOption(optionId) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
                     draggable: false

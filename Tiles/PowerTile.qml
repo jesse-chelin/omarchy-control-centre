@@ -21,8 +21,6 @@ TileSurface {
   property string error: ""
   property bool chevron: false
   property string chevronTooltip: ""
-  property bool editing: false
-  property bool enabledInSettings: true
 
   signal profileClicked(string profile)
   signal profileHovered(int index)
@@ -33,7 +31,6 @@ TileSurface {
   readonly property string shownProfile: pendingProfile !== "" ? pendingProfile : activeProfile
 
   active: false
-  dimmed: editing && !enabledInSettings
 
   Item {
     anchors.fill: parent

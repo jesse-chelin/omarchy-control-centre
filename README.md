@@ -109,9 +109,11 @@ closes it.
 
 ## Settings
 
-Under the Settings heading in edit mode: the card can
-open at the bar end or in the centre, all animation can be turned off, and the
-bar pill can be turned off. **Centre** is honoured however the card was
+Under the Settings heading in edit mode: the card can open at the bar end or
+in the centre, it can run at comfortable or compact density, all animation can
+be turned off, and the bar pill can be turned off. Compact drops the state
+line from the square controls and tightens every row, which is what to reach
+for on a small laptop. **Centre** is honoured however the card was
 opened; **Bar end** means under the bar icon when you click it, and at the end
 of the bar when you press the key. Everything is saved as you change it.
 

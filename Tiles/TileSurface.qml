@@ -17,8 +17,15 @@ BorderSurface {
 
   property bool active: false
   property bool hasCursor: false
-  property bool dimmed: false
   property bool reduceMotion: false
+
+  // Edit mode state, held here rather than by each tile so that "this one is
+  // hidden" is said once, the same way, on every kind of control.
+  property bool editing: false
+  property bool enabledInSettings: true
+  property bool compact: false
+  readonly property bool hiddenInEdit: editing && !enabledInSettings
+  readonly property bool dimmed: hiddenInEdit
   property color foreground: Color.popups.text
   property color accent: Color.accent
   property string tooltip: ""

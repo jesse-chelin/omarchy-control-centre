@@ -19,8 +19,6 @@ TileSurface {
   property bool muted: false
   property bool chevron: false
   property string chevronTooltip: ""
-  property bool editing: false
-  property bool enabledInSettings: true
   // What the number on the right says. Percent suits volume and brightness;
   // warmth wants Kelvin, which is not a percentage of anything.
   property string valueText: Math.round((slider.dragging ? slider.liveValue : root.value) * 100) + "%"
@@ -37,7 +35,6 @@ TileSurface {
   readonly property int pad: Style.spacing.xl
 
   active: false
-  dimmed: editing && !enabledInSettings
 
   Item {
     anchors.fill: parent
@@ -63,35 +60,53 @@ TileSurface {
       anchors.left: glyphButton.right
       anchors.leftMargin: Style.spacing.sm
       anchors.verticalCenter: glyphButton.verticalCenter
-      text: root.editing && !root.enabledInSettings ? root.label + "  ·  Hidden" : root.label
+      text: root.label
       color: root.foreground
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
       font.bold: true
     }
 
-    BorderSurface {
+    // The device name, not a field to type in. A bordered pill beside a label
+    // is input chrome on this desktop, so it read as editable; it is a quiet
+    // label that brightens under the pointer, with a chevron to say it leads
+    // somewhere.
+    Item {
       id: chipPill
       visible: root.chip !== "" && !root.editing
       anchors.left: labelText.right
       anchors.leftMargin: Style.spacing.lg
       anchors.verticalCenter: glyphButton.verticalCenter
-      width: Math.min(chipText.implicitWidth + Style.spacing.lg, parent.width - labelText.x - labelText.width - percentText.width - Style.space(40))
+      // Measured against the percentage on the right, which does not depend
+      // on this: sizing it from its own contents and then sizing its contents
+      // from it is a loop, and QML settles a loop by leaving something at
+      // zero, which is how the chevron disappeared.
+      readonly property real room: Math.max(0, percentText.x - x - Style.space(14))
+      width: Math.min(chipText.implicitWidth + chipChevron.implicitWidth + Style.spacing.xxs, room)
       height: chipText.implicitHeight + Style.spacing.sm
-      radius: Style.cornerRadius
-      color: chipMouse.containsMouse ? Style.hoverFillFor(root.foreground, root.accent) : "transparent"
-      borderSpec: Border.controlSpec("normal", root.foreground, root.accent)
 
       Text {
         id: chipText
-        anchors.centerIn: parent
-        width: parent.width - Style.spacing.lg
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        width: Math.max(0, Math.min(implicitWidth,
+          chipPill.room - chipChevron.implicitWidth - Style.spacing.xxs))
         text: root.chip
-        color: root.dim
+        color: chipMouse.containsMouse ? root.foreground : root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         elide: Text.ElideRight
-        horizontalAlignment: Text.AlignHCenter
+      }
+
+      Text {
+        id: chipChevron
+        anchors.left: chipText.right
+        anchors.leftMargin: Style.spacing.xxs
+        anchors.verticalCenter: chipText.verticalCenter
+        text: "󰅀"
+        color: chipText.color
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
       }
 
       MouseArea {

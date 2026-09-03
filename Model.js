@@ -9,6 +9,7 @@ var SETTINGS_VERSION = 1
 var MAX_STATE_BYTES = 65536
 var COLUMNS = 4
 var POSITIONS = ["bar-end", "centre"]
+var DENSITIES = ["comfortable", "compact"]
 var PROFILES = ["power-saver", "balanced", "performance"]
 
 // The catalogue. This is the whole vocabulary of the card: what a tile is
@@ -177,6 +178,7 @@ function actionSummon(id) {
 // cursor so one keyboard model covers the whole card.
 var OPTIONS = [
   { id: "opt-position", kind: "option", span: 4, section: "options", category: "settings", label: "Position", on: true },
+  { id: "opt-density",  kind: "option", span: 4, section: "options", category: "settings", label: "Density", on: true },
   { id: "opt-motion",   kind: "option", span: 4, section: "options", category: "settings", label: "Reduce motion", on: true },
   { id: "opt-pill",     kind: "option", span: 4, section: "options", category: "settings", label: "Bar pill", on: true }
 ]
@@ -245,6 +247,7 @@ function defaultSettings() {
     version: SETTINGS_VERSION,
     tiles: tiles,
     position: "bar-end",
+    density: "comfortable",
     reduceMotion: false,
     barWidget: true,
     hintSeen: false
@@ -295,6 +298,7 @@ function parseSettings(raw) {
   settings.tiles = tiles
 
   if (POSITIONS.indexOf(parsed.position) !== -1) settings.position = parsed.position
+  if (DENSITIES.indexOf(parsed.density) !== -1) settings.density = parsed.density
   // Present but not exactly `true` means false; absent means the default
   // stands. Those are different answers whenever a default is true.
   if (parsed.reduceMotion !== undefined) settings.reduceMotion = parsed.reduceMotion === true
@@ -311,6 +315,7 @@ function serializeSettings(settings) {
     version: SETTINGS_VERSION,
     tiles: tiles,
     position: POSITIONS.indexOf(s.position) !== -1 ? s.position : "bar-end",
+    density: DENSITIES.indexOf(s.density) !== -1 ? s.density : "comfortable",
     reduceMotion: s.reduceMotion === true,
     barWidget: s.barWidget === true,
     hintSeen: s.hintSeen === true
@@ -391,6 +396,7 @@ function withTileShown(settings, id) {
 function withOption(settings, key, value) {
   var next = cloneSettings(settings)
   if (key === "position") next.position = POSITIONS.indexOf(value) !== -1 ? value : next.position
+  else if (key === "density") next.density = DENSITIES.indexOf(value) !== -1 ? value : next.density
   else if (key === "reduceMotion") next.reduceMotion = value === true
   else if (key === "barWidget") next.barWidget = value === true
   else if (key === "hintSeen") next.hintSeen = value === true
@@ -400,6 +406,11 @@ function withOption(settings, key, value) {
 function nextPosition(position) {
   var index = POSITIONS.indexOf(position)
   return POSITIONS[(index + 1) % POSITIONS.length]
+}
+
+function nextDensity(density) {
+  var index = DENSITIES.indexOf(density)
+  return DENSITIES[(index + 1) % DENSITIES.length]
 }
 
 // ---------------------------------------------------------------------- grid
