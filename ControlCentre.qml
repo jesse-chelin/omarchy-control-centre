@@ -1173,11 +1173,11 @@ Item {
     root.revealCursor()
   }
 
-  // Set by the card once its Flickable exists, so the model side can ask for
-  // the cursor to be brought into view without reaching into the surface.
-  property var revealFn: null
+  // The grid lives in this same file, so it is addressed directly. Handing a
+  // function reference around instead means holding one across a plugin
+  // reload, and calling it after the object behind it has gone.
   function revealCursor() {
-    if (root.revealFn) root.revealFn(root.cursor)
+    if (scroller) scroller.revealCell(root.cursor)
   }
 
   // Whether the stock panel a chevron would open is actually live in the
@@ -1710,11 +1710,9 @@ Item {
   // because the grid stops flicking during a drag and a long catalogue does
   // not fit on one screen. The pointer does not move while this runs, but its
   // position within the content does, so the drag is re-measured each step.
-  property var scrollFn: null
-
   function dragScrollStep() {
-    if (root.draggingId === "" || !root.scrollFn) return
-    root.scrollFn(root.dragPointY)
+    if (root.draggingId === "" || !scroller) return
+    scroller.dragScroll(root.dragPointY)
   }
 
   function shiftDragBy(delta) {
@@ -1966,11 +1964,6 @@ Item {
 
             // Keeps the cursor on screen when the keyboard walks off the
             // visible part of a long catalogue.
-            Component.onCompleted: {
-              root.revealFn = scroller.revealCell
-              root.scrollFn = scroller.dragScroll
-            }
-
             // One step of the drag auto-scroll. Returns nothing; it tells the
             // card how far it actually moved so the drag can be re-measured
             // against content that has shifted underneath a still pointer.
@@ -1990,7 +1983,12 @@ Item {
               contentY = next
               root.shiftDragBy(delta)
             }
-            onHeightChanged: Qt.callLater(function() { scroller.revealCell(root.cursor) })
+            // Deferred, because the height changes while the layout is still
+            // settling. By the time it runs the surface may have been torn
+            // down under a plugin reload, so it checks it is still there.
+            onHeightChanged: Qt.callLater(function() {
+              if (scroller && typeof scroller.revealCell === "function") scroller.revealCell(root.cursor)
+            })
 
             function revealCell(index) {
               var cells = root.grid.cells

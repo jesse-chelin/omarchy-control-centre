@@ -228,6 +228,18 @@ to group everything by category, which made reordering meaningless: moving a
 control one place in the settings could move it past something in a different
 group and appear to do nothing at all.
 
+## Function references outlive the objects behind them
+
+A deferred call (`Qt.callLater`) can run after a plugin reload has torn down
+the object it was going to call, and a stored function reference can point at
+one that is already gone. Both showed up here as a single
+`Property 'revealCell' ... is not a function` in the shell log.
+
+Everything in this plugin's overlay lives in one QML file, so its ids are
+visible from its root functions: address the grid directly rather than
+handing a reference to it around, and check a deferred call's target is still
+there before using it.
+
 ## Screen captures and a surface that is still up
 
 Closing this card is not instant. The fade runs, then the compositor unmaps
