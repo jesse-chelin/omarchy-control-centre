@@ -58,7 +58,15 @@ with tempfile.TemporaryDirectory() as tmp:
     # And removing it puts the file back exactly as it was.
     check(run("clear", str(path))[0] == 0, "clearing failed")
     check(path.read_text() == ORIGINAL, "clearing did not restore the original file")
-    check((base / "bindings.lua.before-control-centre").exists(), "no backup was kept")
+    backup = base / "bindings.lua.before-control-centre"
+    check(backup.exists(), "no backup was kept")
+    # It holds the file as it was, and it is written private from the first
+    # byte: the point of it is being the way back when this got it wrong.
+    check(backup.read_text() == ORIGINAL, "the backup is not the file as it was")
+    check(stat.S_IMODE(backup.stat().st_mode) == 0o600, "the backup is not private")
+    # And it is kept, not refreshed: a backup that tracks the file is not one.
+    run("set", str(path), "SUPER + F5")
+    check(backup.read_text() == ORIGINAL, "the backup was overwritten by a later write")
 
     # Nothing that is not a combination gets written.
     for hostile in ("SUPER", "HYPER + A", "SUPER + SUPER + A", "A",

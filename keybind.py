@@ -157,15 +157,18 @@ def other_bindings(text):
     return found
 
 
-def write_config(path, text, mode):
+def write_config(path, text, mode, original):
     directory = os.path.dirname(os.path.abspath(path)) or "."
     backup = path + ".before-control-centre"
-    if not os.path.exists(backup) and os.path.exists(path):
-        with open(path, "rb") as source:
-            existing = source.read(MAX_BYTES + 1)
-        fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    # The bytes read_config already read and checked, rather than a second
+    # open of the same path: re-reading it here would answer a question that
+    # has been asked once, and would answer it about whatever is at the path
+    # now, symlink included. A mode means read_config opened a real file, so
+    # it is also how "there was a file to copy" is known.
+    if mode is not None and not os.path.exists(backup):
+        fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         try:
-            os.write(fd, existing)
+            os.write(fd, original.encode("utf-8"))
             os.fsync(fd)
         finally:
             os.close(fd)
@@ -215,11 +218,11 @@ def main(argv):
     action, path = argv[1], argv[2]
 
     try:
-        text, mode = read_config(path)
+        original, mode = read_config(path)
     except OSError as error:
         return fail(str(error))
 
-    body, held = strip_block(text)
+    body, held = strip_block(original)
 
     if action == "show":
         sys.stdout.write(held)
@@ -237,7 +240,7 @@ def main(argv):
         text = body.rstrip("\n") + "\n"
 
     try:
-        write_config(path, text, mode)
+        write_config(path, text, mode, original)
     except OSError as error:
         return fail(str(error))
 
