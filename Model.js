@@ -38,7 +38,7 @@ var TILES = [
 
   // One-shot actions, the things the Omarchy menu calls triggers.
   { id: "screenshot", kind: "action", span: 1, section: "toggles", category: "capture", label: "Screenshot",   on: true },
-  { id: "colour",     kind: "action", span: 1, section: "toggles", category: "capture", label: "Colour",       on: true },
+  { id: "colour",     kind: "action", span: 1, section: "toggles", category: "capture", label: "Color Picker", on: true },
   { id: "text",       kind: "action", span: 1, section: "toggles", category: "capture", label: "Grab Text",    on: false },
   { id: "qr",         kind: "action", span: 1, section: "toggles", category: "capture", label: "Scan QR",      on: false },
   { id: "emoji",      kind: "action", span: 1, section: "toggles", category: "tools", label: "Emoji",          on: true },
@@ -89,7 +89,8 @@ var CATEGORIES = [
   { id: "power",        label: "Power" },
   { id: "media",        label: "Media" },
   { id: "system",       label: "System" },
-  { id: "settings",     label: "Settings" }
+  { id: "settings",     label: "Settings" },
+  { id: "card",         label: "On your card" }
 ]
 
 // Edit mode groups the catalogue under headings. A heading is a cell in the
@@ -332,17 +333,57 @@ function withTileEnabled(settings, id, enabled) {
   return next
 }
 
-// Moves a tile by `delta` places in the order. Clamped, so moving the first
-// tile left is a no-op rather than a wrap; the cursor follows the tile.
+// Moves a tile one place along, past the next tile that is shown the same way
+// it is. Stepping one slot in the raw list would hop over hidden tiles and
+// look like nothing happened, since edit mode only ever shows the shown ones
+// next to each other.
 function withTileMoved(settings, id, delta) {
   var next = cloneSettings(settings)
   var index = -1
   for (var i = 0; i < next.tiles.length; i++) if (next.tiles[i].id === id) index = i
   if (index < 0) return next
-  var target = Math.max(0, Math.min(next.tiles.length - 1, index + delta))
-  if (target === index) return next
+  var step = delta < 0 ? -1 : 1
+  var mine = next.tiles[index].enabled === true
+  var target = index + step
+  while (target >= 0 && target < next.tiles.length && (next.tiles[target].enabled === true) !== mine) target += step
+  if (target < 0 || target >= next.tiles.length) return next
   var entry = next.tiles.splice(index, 1)[0]
   next.tiles.splice(target, 0, entry)
+  return next
+}
+
+// Drops `id` where `targetId` currently sits. This is the drag gesture: the
+// two ends of it are tiles, never slot numbers, because the list shifts under
+// the pointer as soon as anything moves.
+function withTileDroppedOn(settings, id, targetId) {
+  if (!id || !targetId || id === targetId) return cloneSettings(settings)
+  var next = cloneSettings(settings)
+  var from = -1
+  for (var i = 0; i < next.tiles.length; i++) if (next.tiles[i].id === id) from = i
+  if (from < 0) return next
+  var entry = next.tiles.splice(from, 1)[0]
+  var to = -1
+  for (var j = 0; j < next.tiles.length; j++) if (next.tiles[j].id === targetId) to = j
+  if (to < 0) { next.tiles.splice(from, 0, entry); return next }
+  // Dropping onto something already on the card puts it in that place and
+  // therefore on the card too, which is the whole point of dragging it there.
+  entry.enabled = tileEnabled(settings, targetId)
+  next.tiles.splice(to, 0, entry)
+  return next
+}
+
+// Switching a tile on from the gallery lands it at the end of the card,
+// which is somewhere the user can predict and then drag from.
+function withTileShown(settings, id) {
+  var next = cloneSettings(settings)
+  var from = -1
+  for (var i = 0; i < next.tiles.length; i++) if (next.tiles[i].id === id) from = i
+  if (from < 0) return next
+  var entry = next.tiles.splice(from, 1)[0]
+  entry.enabled = true
+  var last = -1
+  for (var j = 0; j < next.tiles.length; j++) if (next.tiles[j].enabled === true) last = j
+  next.tiles.splice(last + 1, 0, entry)
   return next
 }
 
@@ -379,23 +420,36 @@ function gridIds(settings, available, editing) {
     return out
   }
 
-  // Edit mode is the gallery: every control this machine can actually back,
-  // grouped so a long catalogue stays findable, with the ones already on the
-  // card in the order the user put them. The settings rows come last.
+  // Edit mode shows the card first, in the order the card uses, because that
+  // is the thing being arranged: a gallery sorted by category cannot show
+  // what moving a control would do. Everything still available to add sits
+  // under it, grouped so a long catalogue stays findable.
   var grouped = []
+  var shown = []
+  for (var e = 0; e < tiles.length; e++) {
+    var shownId = tiles[e].id
+    if (!available || available[shownId] !== true) continue
+    if (tiles[e].enabled !== true) continue
+    shown.push(shownId)
+  }
+  if (shown.length > 0) {
+    grouped.push(headerFor("card"))
+    for (var sIdx = 0; sIdx < shown.length; sIdx++) grouped.push(shown[sIdx])
+  }
   for (var c = 0; c < CATEGORIES.length; c++) {
     var category = CATEGORIES[c].id
-    if (category === "settings") continue
+    if (category === "settings" || category === "card") continue
     var members = []
     for (var t = 0; t < tiles.length; t++) {
       var tileId = tiles[t].id
       if (!available || available[tileId] !== true) continue
+      if (tiles[t].enabled === true) continue
       if (categoryOf(tileId) !== category) continue
       members.push(tileId)
     }
     if (members.length === 0) continue
     grouped.push(headerFor(category))
-    for (var m = 0; m < members.length; m++) grouped.push(members[m])
+    for (var mIdx = 0; mIdx < members.length; mIdx++) grouped.push(members[mIdx])
   }
   grouped.push(headerFor("settings"))
   for (var o = 0; o < OPTIONS.length; o++) grouped.push(OPTIONS[o].id)

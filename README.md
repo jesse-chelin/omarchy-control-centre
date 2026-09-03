@@ -46,14 +46,14 @@ another bar panel puts it away (and the other way round). Turn it off with
 | Key | Action |
 |---|---|
 | Arrows, `h` `j` `k` `l` | Move between tiles |
-| Enter, Space | Flip the tile under the cursor |
+| Enter, Space | Flip the control under the cursor |
 | Shift+Enter, `o` | Open the stock panel behind the tile |
 | Left, Right, `+`, `-` | Move a slider by one step, or pick within a tile |
 | Shift + those | Move a slider by five steps |
 | `1` to `9` | Flip the nth toggle directly |
 | Tab, Shift+Tab | Jump between sections |
-| `,` | Edit mode: reorder and hide tiles, and change settings |
-| Ctrl+arrows | In edit mode, move the tile under the cursor |
+| `,` | Edit mode: show, hide and reorder controls, and change settings |
+| Ctrl+arrows | In edit mode, move the control under the cursor |
 | Esc | Leave edit mode, then close |
 
 ## The controls
@@ -69,7 +69,7 @@ rest are one keystroke away in edit mode.
 | Sound | Volume, Mic Level, Microphone mute |
 | Display | Brightness, Night Light, Warmth |
 | Focus | Do Not Disturb, Stay Awake, Screensaver, Crash Capture |
-| Capture | Recording, Screenshot, Colour, Grab Text, Scan QR |
+| Capture | Recording, Screenshot, Color Picker, Grab Text, Scan QR |
 | Tools | Emoji, Clipboard, Reminder, Share, Transcode, Net Speed, Disk Speed |
 | Desktop | Menu Bar, Window Gaps, Square Ratio, Scrolling layout, Theme |
 | Hardware | Touchpad, Touchscreen, Laptop Screen, Mirror, Hybrid GPU |
@@ -90,11 +90,14 @@ mixer and monitor layout. The card never tries to replace those.
 
 ## Making it yours
 
-Press `,` or click the gear. Edit mode is the whole catalogue, grouped, with
-the controls already on your card shown solid and the rest dimmed. Enter shows
-or hides the one under the cursor, Ctrl and the arrows move it, and the card
-saves as you go. A long catalogue scrolls, and the cursor drags the view along
-with it.
+Press `,` or click the gear. Your card comes first, in the order it actually
+uses, and everything else sits below it grouped by what it does.
+
+Drag a control to move it. Drag one up from the groups below and it joins your
+card where you dropped it. Enter or a click shows and hides the one under the
+cursor, and Ctrl with the arrows moves it for anyone who would rather not
+drag. The card saves as you go, and a long catalogue scrolls with the cursor
+pulling the view along.
 
 ## Settings
 
@@ -179,6 +182,7 @@ omarchy-shell shell call $id setCursor volume     # -1 if that tile is not showi
 omarchy-shell shell call $id moveBy "0,1"
 omarchy-shell shell call $id pressKey enter       # or shift+enter, escape, left, ...
 omarchy-shell shell call $id setEditMode true
+omarchy-shell shell call $id dropTile "volume,wifi"   # the drop half of a drag
 ```
 
 `keepLoaded` overlays are held by a `Loader` keyed on the source URL, so edits

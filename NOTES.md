@@ -190,6 +190,44 @@ Coverage in the font is not the same as ink on the screen. `fc-list
 :charset=<cp>` says a font claims the codepoint; rendering the character and
 measuring the mean pixel value says it actually paints something.
 
+## Dragging inside a scrolling grid
+
+Two things make a drag work here, and both are easy to leave out.
+
+A `Flickable` takes the pointer grab off a child as soon as the pointer has
+travelled far enough, so a drag turns into a scroll halfway through unless the
+child sets `preventStealing`. The grid also stops being interactive while a
+drag is in flight, so the two gestures cannot both claim the same movement.
+
+The dragged tile is drawn offset by a transform rather than moved. Its
+position is a binding on the grid's own layout, so moving the item would fight
+that binding; nothing about the layout changes until the drop, which rewrites
+the settings and lets the grid lay out again on its own.
+
+The drop target is found from the grid's geometry, not by asking what is under
+the pointer: the dragged tile is painted away from its slot, so a hit test
+against what is drawn answers with the thing being dragged.
+
+Edit mode shows the card's own order first, then what is left to add. It used
+to group everything by category, which made reordering meaningless: moving a
+control one place in the settings could move it past something in a different
+group and appear to do nothing at all.
+
+## Screen captures and a surface that is still up
+
+Closing this card is not instant. The fade runs, then the compositor unmaps
+the surface, and a capture started on the same tick photographs the card
+sitting over whatever the user wanted a picture of. The capture tiles queue
+their command and release it when `backingWindowVisible` goes false, with a
+fallback timer so a compositor that never reports it cannot swallow the action.
+
+## Someone else's picker
+
+A user who installs their own emoji picker or clipboard has replaced the
+built-in one everywhere else, and the tile should not drag them back to it.
+An enabled third-party overlay whose id or name says what it is wins over the
+first-party plugin of the same kind.
+
 ## Motion
 
 The card's resting position is derived from its own width and height: it is

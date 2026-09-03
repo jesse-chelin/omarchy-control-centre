@@ -24,9 +24,19 @@ BorderSurface {
   property string tooltip: ""
   property string fontFamily: Style.font.family
 
+  // Edit mode drags a tile to where it should sit. The press has to stay a
+  // click until the pointer has actually travelled, or every attempt to
+  // switch a tile off would start a drag instead.
+  property bool draggable: false
+  property bool dropTarget: false
+  readonly property int dragThreshold: Style.space(6)
+
   signal clicked()
   signal rightClicked()
   signal pointerMoved(var mouse)
+  signal dragStarted()
+  signal dragMoved(real dx, real dy, var item, var mouse)
+  signal dragEnded()
 
   readonly property alias containsMouse: mouse.containsMouse
 
@@ -40,9 +50,11 @@ BorderSurface {
   // (0.25), so a bordered tile would go *fainter* under the cursor, and the
   // hover fill is dimmer than the selected fill it would be replacing.
   color: active ? Style.selectedFillFor(foreground, accent) : Style.normalFillFor(foreground, accent)
-  borderSpec: hasCursor
-    ? Border.flat(Style.focusStateColor(foreground, accent), Math.max(1, Style.focusBorderWidth))
-    : (active ? Border.controlSpec("selected", foreground, accent) : Border.controlSpec("normal", foreground, accent))
+  borderSpec: dropTarget
+    ? Border.flat(accent, Math.max(2, Style.space(2)))
+    : (hasCursor
+      ? Border.flat(Style.focusStateColor(foreground, accent), Math.max(1, Style.focusBorderWidth))
+      : (active ? Border.controlSpec("selected", foreground, accent) : Border.controlSpec("normal", foreground, accent)))
 
   Behavior on color { enabled: !root.reduceMotion; ColorAnimation { duration: 100 } }
 
@@ -60,10 +72,49 @@ BorderSurface {
     id: mouse
     anchors.fill: parent
     hoverEnabled: true
-    cursorShape: Qt.PointingHandCursor
+    cursorShape: root.draggable ? (dragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor) : Qt.PointingHandCursor
     acceptedButtons: Qt.LeftButton | Qt.RightButton
-    onPositionChanged: function(m) { root.pointerMoved(m) }
+    // The grid scrolls, and a Flickable takes the grab off a child as soon as
+    // the pointer has travelled far enough. Without this a drag turns into a
+    // scroll halfway through, every time.
+    preventStealing: root.draggable
+
+    property bool dragging: false
+    property real pressX: 0
+    property real pressY: 0
+
+    onPressed: function(m) {
+      dragging = false
+      pressX = m.x
+      pressY = m.y
+    }
+    onPositionChanged: function(m) {
+      if (!root.draggable || !(m.buttons & Qt.LeftButton)) {
+        root.pointerMoved(m)
+        return
+      }
+      var dx = m.x - pressX
+      var dy = m.y - pressY
+      if (!dragging) {
+        if (Math.abs(dx) < root.dragThreshold && Math.abs(dy) < root.dragThreshold) return
+        dragging = true
+        root.dragStarted()
+      }
+      root.dragMoved(dx, dy, root, m)
+    }
+    onReleased: function(m) {
+      if (!dragging) return
+      dragging = false
+      root.dragEnded()
+    }
+    onCanceled: {
+      if (!dragging) return
+      dragging = false
+      root.dragEnded()
+    }
     onClicked: function(m) {
+      // A press that turned into a drag has already done its work.
+      if (dragging) return
       if (m.button === Qt.RightButton) root.rightClicked()
       else root.clicked()
     }

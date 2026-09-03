@@ -113,11 +113,67 @@ TestCase {
   function test_move_is_clamped_not_wrapped() {
     var settings = Model.defaultSettings()
     var first = settings.tiles[0].id
+    var second = settings.tiles[1].id
     var moved = Model.withTileMoved(settings, first, -1)
     compare(moved.tiles[0].id, first, "the first tile cannot move off the front")
-    moved = Model.withTileMoved(settings, first, 2)
-    compare(moved.tiles[2].id, first)
+    moved = Model.withTileMoved(settings, first, 1)
+    compare(moved.tiles[0].id, second, "moving right puts it past its neighbour")
+    compare(moved.tiles[1].id, first)
     compare(moved.tiles.length, settings.tiles.length, "nothing is lost in a move")
+  }
+
+  function test_move_steps_past_tiles_shown_the_same_way() {
+    // wifi and dnd are on, and everything between them is hidden. Edit mode
+    // draws them side by side, so one press has to swap them rather than
+    // shuffling wifi past something invisible.
+    var settings = Model.defaultSettings()
+    settings = Model.withTileEnabled(settings, "bluetooth", false)
+    var moved = Model.withTileMoved(settings, "wifi", 1)
+    var order = []
+    for (var i = 0; i < moved.tiles.length; i++) if (moved.tiles[i].enabled) order.push(moved.tiles[i].id)
+    compare(order[0], "dnd", "wifi moved past the next shown tile")
+    compare(order[1], "wifi")
+    // The hidden tile is untouched by a move it was not part of.
+    compare(Model.tileEnabled(moved, "bluetooth"), false)
+    compare(moved.tiles.length, settings.tiles.length)
+  }
+
+  function test_a_drop_puts_a_tile_where_the_target_sits() {
+    var settings = Model.defaultSettings()
+    var moved = Model.withTileDroppedOn(settings, "volume", "wifi")
+    compare(moved.tiles[0].id, "volume")
+    compare(moved.tiles[1].id, "wifi")
+    compare(moved.tiles.length, settings.tiles.length)
+  }
+
+  function test_dropping_a_hidden_tile_onto_the_card_shows_it() {
+    var settings = Model.defaultSettings()
+    compare(Model.tileEnabled(settings, "qr"), false)
+    var moved = Model.withTileDroppedOn(settings, "qr", "wifi")
+    compare(Model.tileEnabled(moved, "qr"), true, "dragging onto the card is how it gets added")
+    compare(moved.tiles[0].id, "qr")
+  }
+
+  function test_dropping_onto_a_hidden_tile_does_not_show_the_dragged_one() {
+    var settings = Model.defaultSettings()
+    var moved = Model.withTileDroppedOn(settings, "qr", "transcode")
+    compare(Model.tileEnabled(moved, "qr"), false, "both were hidden and both stay hidden")
+  }
+
+  function test_a_drop_that_goes_nowhere_changes_nothing() {
+    var settings = Model.defaultSettings()
+    var before = Model.serializeSettings(settings)
+    compare(Model.serializeSettings(Model.withTileDroppedOn(settings, "wifi", "wifi")), before)
+    compare(Model.serializeSettings(Model.withTileDroppedOn(settings, "wifi", "")), before)
+    compare(Model.serializeSettings(Model.withTileDroppedOn(settings, "made-up", "wifi")), before)
+  }
+
+  function test_showing_a_tile_lands_it_at_the_end_of_the_card() {
+    var settings = Model.withTileShown(Model.defaultSettings(), "transcode")
+    var shown = []
+    for (var i = 0; i < settings.tiles.length; i++) if (settings.tiles[i].enabled) shown.push(settings.tiles[i].id)
+    compare(shown[shown.length - 1], "transcode")
+    compare(Model.tileEnabled(settings, "transcode"), true)
   }
 
   function test_position_cycles() {

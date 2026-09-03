@@ -533,6 +533,33 @@ Item {
   }
   function hasPart(name) { return root.hardware["hw." + name] === "yes" }
 
+  // Someone running their own emoji picker or clipboard should get theirs
+  // from this tile, not the built-in one they replaced. A third-party plugin
+  // whose name says what it is wins; the first-party one is the fallback.
+  function preferredPlugin(word, fallbackId) {
+    var registry = root.shell ? root.shell.pluginRegistry : null
+    var plugins = registry && registry.installedPlugins ? registry.installedPlugins : null
+    if (!plugins) return fallbackId
+    var needle = String(word).toLowerCase()
+    for (var id in plugins) {
+      var manifest = plugins[id]
+      if (!manifest || manifest.__isFirstParty) continue
+      if (!Array.isArray(manifest.kinds) || manifest.kinds.indexOf("overlay") === -1) continue
+      if (!registry.isEnabled(id)) continue
+      var haystack = (String(id) + " " + String(manifest.name || "")).toLowerCase()
+      if (haystack.indexOf(needle) !== -1) return id
+    }
+    return fallbackId
+  }
+
+  function pluginFor(tileId) {
+    var fallback = Model.actionSummon(tileId)
+    if (!fallback) return ""
+    if (tileId === "emoji") return root.preferredPlugin("emoji", fallback)
+    if (tileId === "clipboard") return root.preferredPlugin("clipboard", fallback)
+    return fallback
+  }
+
   function pluginAvailable(id) {
     var registry = root.shell ? root.shell.pluginRegistry : null
     if (!registry || !registry.installedPlugins) return false
@@ -1053,8 +1080,8 @@ Item {
     colour: root.hasTool("hyprpicker"),
     text: root.hasTool("omarchy-capture-text"),
     qr: root.hasTool("omarchy-capture-qr"),
-    emoji: root.pluginAvailable("omarchy.emojis"),
-    clipboard: root.pluginAvailable("omarchy.clipboard"),
+    emoji: root.pluginAvailable(root.pluginFor("emoji")),
+    clipboard: root.pluginAvailable(root.pluginFor("clipboard")),
     reminder: root.hasTool("omarchy-reminder"),
     share: root.hasTool("omarchy-menu-share"),
     transcode: root.hasTool("omarchy-transcode"),
@@ -1220,6 +1247,13 @@ Item {
     return list
   }
 
+  // Anything that photographs the screen has to wait for this card to be off
+  // it. Closing is not instant: the fade runs, then the compositor unmaps the
+  // surface, and a capture fired on the same tick catches the card sitting
+  // over whatever the user wanted a picture of.
+  readonly property var capturesScreen: ["screenshot", "colour", "text", "qr"]
+  property var queuedCommand: null
+
   function runAction(id) {
     var argv = Model.actionCommand(id)
     if (!argv) return
@@ -1230,13 +1264,38 @@ Item {
     }
     root.armedId = ""
     root.dismiss()
+    if (root.capturesScreen.indexOf(String(id)) !== -1) {
+      root.queuedCommand = argv
+      queuedFallback.restart()
+      return
+    }
     root.runDetached(argv)
+  }
+
+  // Run whatever was waiting for the surface to go. Called both by the
+  // window actually unmapping and by the fallback, whichever comes first,
+  // and only ever runs the once.
+  function flushQueuedCommand() {
+    var argv = root.queuedCommand
+    if (!argv) return
+    root.queuedCommand = null
+    queuedFallback.stop()
+    root.runDetached(argv)
+  }
+
+  // A compositor that never reports the surface gone must not swallow the
+  // action entirely.
+  Timer {
+    id: queuedFallback
+    interval: 600
+    repeat: false
+    onTriggered: root.flushQueuedCommand()
   }
 
   // A one-shot tile. Anything the shell already hosts is summoned rather than
   // run, which costs no child process and does not depend on PATH.
   function runTile(id) {
-    var plugin = Model.actionSummon(id)
+    var plugin = root.pluginFor(id)
     if (plugin) {
       if (!root.pluginAvailable(plugin)) return
       root.dismiss()
@@ -1289,7 +1348,8 @@ Item {
     var kind = Model.kindOf(id)
     if (root.editing) {
       if (kind === "option") root.activateOption(id)
-      else root.saveSettings(Model.withTileEnabled(root.settings, id, !Model.tileEnabled(root.settings, id)))
+      else if (Model.tileEnabled(root.settings, id)) root.saveSettings(Model.withTileEnabled(root.settings, id, false))
+      else root.saveSettings(Model.withTileShown(root.settings, id))
       return
     }
     if (kind === "toggle") root.activateToggle(id)
@@ -1448,6 +1508,19 @@ Item {
     return root.cursor
   }
 
+  // Performs the drop half of a drag, which is the half that changes
+  // anything. Keyboard focus and pointer drags inside a layer-shell surface
+  // cannot be synthesised from outside, so this is how the gesture is tested.
+  //   omarchy-shell shell call <id> dropTile "volume,wifi"
+  function dropTile(text) {
+    var parts = String(text || "").split(",")
+    if (parts.length !== 2) return "usage: dropTile <movedId>,<targetId>"
+    root.draggingId = parts[0].trim()
+    root.dropTargetId = parts[1].trim()
+    root.endDrag()
+    return Model.gridIds(root.settings, root.available, root.editing).join(" ")
+  }
+
   function setEditMode(text) {
     root.setEditing(String(text) === "true")
     return root.editing
@@ -1584,6 +1657,63 @@ Item {
     return ""
   }
 
+  // ------------------------------------------------------------------ drag
+
+  // Edit mode drags a tile to where it should go. The drag is tracked here
+  // rather than by moving the item, because the tiles are laid out by the
+  // grid: letting one wander would fight its own geometry binding. The tile
+  // is drawn offset instead, and only the settings change on drop.
+  property string draggingId: ""
+  property string dropTargetId: ""
+  property real dragDX: 0
+  property real dragDY: 0
+
+  function beginDrag(id) {
+    if (!root.editing || Model.kindOf(id) === "option" || Model.isHeader(id)) return
+    root.draggingId = id
+    root.dropTargetId = ""
+    root.dragDX = 0
+    root.dragDY = 0
+  }
+
+  function updateDrag(dx, dy, item, mouse, gridItem) {
+    if (root.draggingId === "") return
+    root.dragDX = dx
+    root.dragDY = dy
+    var point = item.mapToItem(gridItem, mouse.x, mouse.y)
+    root.dropTargetId = root.tileAt(point.x, point.y)
+  }
+
+  // Which tile the pointer is over, by the grid's own geometry rather than by
+  // asking the items: the dragged tile is drawn away from its slot, and a hit
+  // test against what is painted would answer with the thing being dragged.
+  function tileAt(x, y) {
+    var cells = root.grid.cells
+    for (var i = 0; i < cells.length; i++) {
+      var cell = cells[i]
+      if (x < cell.x || x > cell.x + cell.width) continue
+      if (y < cell.y || y > cell.y + cell.height) continue
+      var id = cell.id
+      if (id === root.draggingId || Model.isHeader(id) || Model.kindOf(id) === "option") return ""
+      return id
+    }
+    return ""
+  }
+
+  function endDrag() {
+    var moved = root.draggingId
+    var target = root.dropTargetId
+    root.draggingId = ""
+    root.dropTargetId = ""
+    root.dragDX = 0
+    root.dragDY = 0
+    if (!moved || !target || moved === target) return
+    root.saveSettings(Model.withTileDroppedOn(root.settings, moved, target))
+    var ids = Model.gridIds(root.settings, root.available, true)
+    var index = ids.indexOf(moved)
+    if (index >= 0) root.cursor = index
+  }
+
   PointerMoveGate {
     id: pointerGate
     referenceItem: card
@@ -1606,6 +1736,10 @@ Item {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
+
+    // The moment the compositor has actually taken the surface down is the
+    // moment a screen capture is safe to start.
+    onBackingWindowVisibleChanged: if (!backingWindowVisible) root.flushQueuedCommand()
 
     MouseArea {
       anchors.fill: parent
@@ -1739,7 +1873,7 @@ Item {
                 anchors.rightMargin: Style.spacing.md
                 anchors.verticalCenter: parent.verticalCenter
                 visible: root.editing
-                text: "Enter shows or hides · Ctrl+arrows reorder"
+                text: "Enter shows or hides · Drag or Ctrl+arrows to reorder"
                 color: Qt.darker(root.foreground, 1.5)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -1780,7 +1914,7 @@ Item {
             contentWidth: width
             contentHeight: root.grid.height
             clip: true
-            interactive: contentHeight > height
+            interactive: contentHeight > height && root.draggingId === ""
             boundsBehavior: Flickable.StopAtBounds
             flickDeceleration: 6000
 
@@ -1814,10 +1948,21 @@ Item {
                 readonly property string kind: Model.kindOf(modelData)
                 readonly property bool hasCursor: root.cursor === index
                 readonly property bool enabledInSettings: Model.tileEnabled(root.settings, modelData)
+                readonly property bool beingDragged: root.draggingId === modelData
+                readonly property bool isDropTarget: root.dropTargetId === modelData
                 x: geometry ? geometry.x : 0
                 y: geometry ? geometry.y : 0
                 width: geometry ? geometry.width : 0
                 height: geometry ? geometry.height : 0
+                // The dragged tile is drawn away from its slot rather than
+                // moved into a new one: the slot is where it still lives
+                // until the drop says otherwise.
+                z: beingDragged ? 10 : 0
+                opacity: beingDragged ? 0.85 : 1
+                transform: Translate {
+                  x: cell.beingDragged ? root.dragDX : 0
+                  y: cell.beingDragged ? root.dragDY : 0
+                }
 
                 sourceComponent: kind === "toggle" || kind === "action" ? toggleComp
                   : kind === "slider" || kind === "warmth" ? sliderComp
@@ -1855,6 +2000,11 @@ Item {
                     onChevronClicked: root.openPanel(cell.modelData)
                     onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
+                    draggable: root.editing
+                    dropTarget: cell.isDropTarget
+                    onDragStarted: root.beginDrag(cell.modelData)
+                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragEnded: root.endDrag()
                   }
                 }
 
@@ -1916,6 +2066,11 @@ Item {
                       else root.setBrightness(v * 100)
                     }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
+                    draggable: root.editing
+                    dropTarget: cell.isDropTarget
+                    onDragStarted: root.beginDrag(cell.modelData)
+                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragEnded: root.endDrag()
                   }
                 }
 
@@ -1949,6 +2104,11 @@ Item {
                     onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
+                    draggable: root.editing
+                    dropTarget: cell.isDropTarget
+                    onDragStarted: root.beginDrag(cell.modelData)
+                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragEnded: root.endDrag()
                   }
                 }
 
@@ -1976,6 +2136,11 @@ Item {
                     onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
+                    draggable: root.editing
+                    dropTarget: cell.isDropTarget
+                    onDragStarted: root.beginDrag(cell.modelData)
+                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragEnded: root.endDrag()
                   }
                 }
 
@@ -1998,6 +2163,11 @@ Item {
                     onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
+                    draggable: root.editing
+                    dropTarget: cell.isDropTarget
+                    onDragStarted: root.beginDrag(cell.modelData)
+                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragEnded: root.endDrag()
                   }
                 }
 
@@ -2024,6 +2194,11 @@ Item {
                     onMoveRequested: function(delta) { root.moveTile(cell.modelData, delta) }
                     onClicked: { root.cursor = cell.index; if (root.editing) root.activate(cell.index) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
+                    draggable: root.editing
+                    dropTarget: cell.isDropTarget
+                    onDragStarted: root.beginDrag(cell.modelData)
+                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragEnded: root.endDrag()
                   }
                 }
 
@@ -2058,6 +2233,11 @@ Item {
                     onChoiceClicked: function(v) { root.cursor = cell.index; root.saveSettings(Model.withOption(root.settings, "position", v)) }
                     onClicked: { root.cursor = cell.index; root.activateOption(optionId) }
                     onPointerMoved: function(mouse) { root.hoverTile(cell.index, this, mouse) }
+                    draggable: false
+                    dropTarget: cell.isDropTarget
+                    onDragStarted: root.beginDrag(cell.modelData)
+                    onDragMoved: function(dx, dy, item, mouse) { root.updateDrag(dx, dy, item, mouse, gridItem) }
+                    onDragEnded: root.endDrag()
                   }
                 }
               }
