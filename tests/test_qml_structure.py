@@ -162,6 +162,38 @@ def lost_glyphs(path):
     return problems
 
 
+def unformatted_text(path):
+    """A Text sink that has not said it is plain text.
+
+    Qt's `textFormat` defaults to `Text.AutoText`, which sniffs the string and
+    renders it as rich text when it looks like markup. Names this card shows
+    are not ours: Wi-Fi SSIDs, Bluetooth device names, media metadata,
+    PipeWire descriptions and Hyprland binding descriptions all arrive from
+    outside, and a network named `<img src=...>` would be interpreted rather
+    than shown. Stripping the markup on the way in is the wrong end to fix it,
+    because the next sink added would be unprotected again; every sink says
+    plainly what it renders.
+    """
+    lines = path.read_text(encoding='utf-8').split('\n')
+    problems = []
+    for number, line in enumerate(lines, start=1):
+        if not re.match(r'^\s*(Text|PanelSectionHeader) \{\s*$', strip(line)):
+            continue
+        depth, index, found = 0, number - 1, False
+        while index < len(lines):
+            code = strip(lines[index])
+            depth += code.count('{') - code.count('}')
+            if 'textFormat' in code:
+                found = True
+            if depth <= 0 and index > number - 1:
+                break
+            index += 1
+        if not found:
+            problems.append('%s:%d: this Text does not set `textFormat`, so Qt decides '
+                            'whether to render its content as markup' % (path.name, number))
+    return problems
+
+
 def duplicate_js_functions(path):
     """A function defined twice in one .js file.
 
@@ -205,6 +237,7 @@ def main():
         problems += latched_visibility(path)
         problems += model_functions_exist(path, ROOT / 'Model.js')
         problems += lost_glyphs(path)
+        problems += unformatted_text(path)
     for path in sorted(ROOT.glob('*.js')):
         problems += duplicate_js_functions(path)
     if problems:

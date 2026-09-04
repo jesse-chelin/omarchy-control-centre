@@ -41,6 +41,7 @@ TileSurface {
     anchors.bottomMargin: root.borderBottom + Style.spacing.md
 
     Text {
+      textFormat: Text.PlainText
       id: glyphText
       anchors.left: parent.left
       anchors.top: parent.top
@@ -51,6 +52,7 @@ TileSurface {
     }
 
     Text {
+      textFormat: Text.PlainText
       visible: root.editing
       anchors.left: labelText.right
       anchors.leftMargin: Style.spacing.lg
@@ -63,6 +65,7 @@ TileSurface {
     }
 
     Text {
+      textFormat: Text.PlainText
       id: labelText
       anchors.left: glyphText.right
       anchors.leftMargin: Style.spacing.sm

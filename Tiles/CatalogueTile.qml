@@ -33,6 +33,7 @@ TileSurface {
     anchors.bottomMargin: root.borderBottom + (root.wide ? 0 : root.pad - Style.space(2))
 
     Text {
+      textFormat: Text.PlainText
       id: glyphText
       text: root.glyph
       color: root.dim
@@ -44,6 +45,7 @@ TileSurface {
     }
 
     Text {
+      textFormat: Text.PlainText
       text: root.label
       color: root.foreground
       font.family: root.fontFamily
@@ -61,6 +63,7 @@ TileSurface {
     }
 
     Text {
+      textFormat: Text.PlainText
       id: hiddenMark
       text: "Hidden"
       color: root.dim

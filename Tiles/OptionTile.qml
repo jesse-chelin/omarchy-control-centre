@@ -53,6 +53,7 @@ TileSurface {
       spacing: Style.space(1)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: root.label
         color: root.foreground
@@ -62,6 +63,7 @@ TileSurface {
         elide: Text.ElideRight
       }
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: root.description
         visible: text !== ""
@@ -97,6 +99,7 @@ TileSurface {
           : Border.controlSpec("normal", root.foreground, root.accent)
 
         Text {
+          textFormat: Text.PlainText
           id: pillText
           anchors.centerIn: parent
           text: root.isAction ? (root.armed ? "Press again" : root.actionLabel)

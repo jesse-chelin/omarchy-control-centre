@@ -24,6 +24,7 @@ TileSurface {
 
 
   Text {
+    textFormat: Text.PlainText
     id: glyphText
     x: root.borderLeft + root.pad
     y: root.borderTop + root.pad - Style.space(2)
@@ -81,6 +82,7 @@ TileSurface {
     // mistake rather than as a system. The card is sized instead so that the
     // longest label in the catalogue fits at this size.
     Text {
+      textFormat: Text.PlainText
       width: parent.width
       text: root.label
       color: root.foreground
@@ -91,6 +93,7 @@ TileSurface {
     }
 
     Text {
+      textFormat: Text.PlainText
       width: parent.width
       text: root.error !== "" ? root.error : root.subtitle
       // An error is worth the room at any density; the state line is not,

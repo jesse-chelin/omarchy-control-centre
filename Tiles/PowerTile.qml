@@ -40,6 +40,7 @@ TileSurface {
     anchors.bottomMargin: root.borderBottom
 
     Text {
+      textFormat: Text.PlainText
       id: glyphText
       anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
@@ -68,6 +69,7 @@ TileSurface {
       spacing: Style.space(1)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: root.batteryPresent ? "Battery" : "Power"
         color: root.foreground
@@ -77,6 +79,7 @@ TileSurface {
         elide: Text.ElideRight
       }
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: root.error !== "" ? root.error : (root.batteryPresent ? root.batteryText : "Profile")
         visible: text !== ""

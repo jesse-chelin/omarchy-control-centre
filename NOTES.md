@@ -506,6 +506,29 @@ slider and scrolls the card instead. `acceptedButtons: Qt.NoButton` is what
 keeps presses falling through to the slider underneath, so dragging still
 works; wheel events are delivered to a MouseArea regardless of that property.
 
+## Names on the card are not ours
+
+Wi-Fi SSIDs, Bluetooth device names, MPRIS metadata, PipeWire descriptions and
+Hyprland binding descriptions all arrive from outside and are all rendered.
+Qt's `textFormat` defaults to `Text.AutoText`, which sniffs the string and
+renders it as rich text when it looks like markup, so a network called
+`<img src="file:///etc/passwd">` would be interpreted rather than shown.
+
+Stripping markup on the way in is the wrong end to fix it: the next sink added
+would be unprotected again, and a name with a `<` in it deserves to be shown
+with the `<` in it. Every sink declares `textFormat: Text.PlainText` instead,
+and `tests/test_qml_structure.py` fails on any `Text` that does not.
+
+`tests/tst_text.qml` proves the point against Qt rather than against a belief
+about Qt: the same hostile string is measured in a default `Text` and a plain
+one, and the default renders narrower because it swallowed the tags.
+
+Nothing external reaches a stock component's text, which is the part this
+plugin cannot set a format on. The only strings handed to `Button`,
+`PanelActionButton` or `PanelToolTip` are fixed labels, profile names from an
+allowlist, and theme directory names already matched against
+`^[a-z0-9][a-z0-9-]{0,63}$`.
+
 ## Motion
 
 The card's resting position is derived from its own width and height: it is

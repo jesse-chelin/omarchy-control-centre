@@ -151,6 +151,13 @@ places where something outside it gets a say are deliberately narrow.
 requests, holds no tokens, and installs nothing.
 No sudo or pkexec is required, and neither is ever invoked.
 
+**Names the card did not choose.** Wi-Fi SSIDs, Bluetooth device names, media
+metadata, PipeWire descriptions and Hyprland binding descriptions are all
+rendered, and all come from outside. Every text sink in the plugin declares
+`textFormat: Text.PlainText`, so a network named after a piece of markup is
+shown as those characters rather than interpreted as them, and a structural
+test fails the build on any sink that does not say so.
+
 **Your Hyprland config.** Setting a shortcut from the card writes one marked
 block to `~/.config/hypr/bindings.lua`. That is the only file this plugin
 touches that it does not own, so: the combination is validated against a fixed

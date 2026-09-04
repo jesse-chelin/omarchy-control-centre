@@ -63,6 +63,7 @@ TileSurface {
     }
 
     Text {
+      textFormat: Text.PlainText
       id: labelText
       anchors.left: glyphButton.right
       anchors.leftMargin: Style.spacing.sm
@@ -93,6 +94,7 @@ TileSurface {
       height: chipText.implicitHeight + Style.spacing.sm
 
       Text {
+        textFormat: Text.PlainText
         id: chipText
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
@@ -106,6 +108,7 @@ TileSurface {
       }
 
       Text {
+        textFormat: Text.PlainText
         id: chipChevron
         anchors.left: chipText.right
         anchors.leftMargin: Style.spacing.xxs
@@ -132,6 +135,7 @@ TileSurface {
     }
 
     Text {
+      textFormat: Text.PlainText
       id: percentText
       anchors.right: chevronButton.visible ? chevronButton.left : parent.right
       anchors.rightMargin: chevronButton.visible ? Style.spacing.sm : 0

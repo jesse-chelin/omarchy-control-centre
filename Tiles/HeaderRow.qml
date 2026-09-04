@@ -13,6 +13,7 @@ Item {
   property string fontFamily: Style.font.family
 
   PanelSectionHeader {
+    textFormat: Text.PlainText
     anchors.left: parent.left
     anchors.bottom: parent.bottom
     anchors.bottomMargin: Style.spacing.xxs

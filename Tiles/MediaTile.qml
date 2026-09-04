@@ -56,6 +56,7 @@ TileSurface {
       }
 
       Text {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         visible: !root.localArt
         text: "󰝚"
@@ -74,6 +75,7 @@ TileSurface {
       spacing: Style.space(1)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: root.title !== "" ? root.title : "Nothing playing"
         color: root.foreground
@@ -83,6 +85,7 @@ TileSurface {
         elide: Text.ElideRight
       }
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: root.artist
         visible: text !== ""

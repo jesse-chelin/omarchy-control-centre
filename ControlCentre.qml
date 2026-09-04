@@ -2216,6 +2216,7 @@ Item {
               height: root.headerHeight
 
               Text {
+                textFormat: Text.PlainText
                 id: titleText
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
@@ -2230,6 +2231,7 @@ Item {
               // room is left between it and the gear, and gives up characters
               // rather than pushing anything aside.
               Text {
+                textFormat: Text.PlainText
                 anchors.left: titleText.right
                 anchors.leftMargin: Style.spacing.xl
                 anchors.right: gear.left
@@ -2258,6 +2260,7 @@ Item {
 
             // ---------- first-run hint ----------
             Text {
+              textFormat: Text.PlainText
               width: parent.width
               visible: root.hintVisible && !root.editing
               text: Model.hintText()
@@ -2741,6 +2744,7 @@ Item {
 
           // ---------- status ----------
           Text {
+            textFormat: Text.PlainText
             id: statusText
             anchors.left: parent.left
             anchors.right: parent.right
