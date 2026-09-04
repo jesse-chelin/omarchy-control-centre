@@ -994,6 +994,30 @@ function findOwnBind(binds, description) {
   return ""
 }
 
+// The album art a media player points at, or "" if it is not something worth
+// handing to an image loader.
+//
+// The URL is chosen by whatever is playing, so it is not ours: a player can
+// point it anywhere. It is accepted only as one of the four schemes art
+// actually arrives as, never with credentials in it, and never longer than a
+// URL plausibly is. What it cannot be is refused to `file://` alone, which is
+// what this used to do: real players hand out an address on the machine or
+// the network that serves the library, and refusing those meant the tile
+// never showed art at all.
+function artSource(url) {
+  var text = String(url || "")
+  if (text.length === 0 || text.length > 2048) return ""
+  if (/[\u0000-\u001f\u007f\s]/.test(text)) return ""
+  var scheme = text.match(/^(file|https?|data):/)
+  if (!scheme) return ""
+  if (scheme[1] === "data") return /^data:image\/[a-z0-9.+-]{1,32};/i.test(text) ? text : ""
+  // Credentials in a URL are never how art is served, and are how a fetch
+  // gets turned into something else.
+  var authority = text.replace(/^[a-z]+:\/\//i, "").split("/")[0]
+  if (authority.indexOf("@") !== -1) return ""
+  return text
+}
+
 function hintText() {
   return "Arrows move · Enter toggles · Shift+Enter opens the full panel · Esc closes"
 }

@@ -609,6 +609,27 @@ TestCase {
     compare(order[order.indexOf(plan.anchorId) + 1], "nightlight")
   }
 
+  // ---- album art comes from whatever is playing ---------------------------
+
+  function test_art_accepts_the_four_ways_it_arrives() {
+    compare(Model.artSource("file:///home/x/cover.png"), "file:///home/x/cover.png")
+    compare(Model.artSource("http://172.16.11.237:9330/api/image/abc?width=400"),
+            "http://172.16.11.237:9330/api/image/abc?width=400")
+    compare(Model.artSource("https://i.example.com/a.jpg"), "https://i.example.com/a.jpg")
+    compare(Model.artSource("data:image/png;base64,iVBORw0KGgo="), "data:image/png;base64,iVBORw0KGgo=")
+  }
+
+  function test_art_refuses_what_is_not_art() {
+    compare(Model.artSource(""), "")
+    compare(Model.artSource("javascript:alert(1)"), "", "a scheme that is not a fetch")
+    compare(Model.artSource("qrc:/x.png"), "")
+    compare(Model.artSource("/etc/passwd"), "", "a bare path names no scheme")
+    compare(Model.artSource("data:text/html;base64,PHNjcmlwdD4="), "", "data, but not an image")
+    compare(Model.artSource("http://user:pass@host/a.png"), "", "credentials in a URL")
+    compare(Model.artSource("http://host/a.png\nSET foo"), "", "a newline smuggled in")
+    compare(Model.artSource("http://host/" + new Array(2100).join("a")), "", "longer than a URL is")
+  }
+
   // ---- parsing what subprocesses print ------------------------------------
 
   function test_profiles_parse_and_ignore_anything_unexpected() {

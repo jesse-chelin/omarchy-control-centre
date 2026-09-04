@@ -1,11 +1,12 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../Model.js" as Model
 
-// Album art on the left, title and artist in the middle, transport on the
-// right. Art is only loaded from a local file: an MPRIS player that hands
-// out an http URL gets the note glyph instead, because this plugin never
-// touches the network.
+// Album art, what is playing, and the transport. The row is laid out like the
+// slider rows above it: the same inset from the card edge, the same inset for
+// its trailing controls, so the three wide rows line up down the card rather
+// than each finding its own margins.
 TileSurface {
   id: root
 
@@ -21,16 +22,19 @@ TileSurface {
   signal controlHovered(int index)
 
   readonly property color dim: Qt.darker(foreground, 1.5)
+  // The same inset every other tile uses, so the art starts where the glyphs
+  // above it start.
   readonly property int pad: Style.spacing.xl
-  readonly property bool localArt: artUrl.indexOf("file://") === 0
   readonly property int artSize: height - (borderTop + borderBottom) - Style.spacing.md * 2
-
-  active: playing
+  readonly property string artSource: Model.artSource(artUrl)
+  // One size for all three, so the gaps between them are equal. A play button
+  // drawn larger than its neighbours moved them apart by different amounts.
+  readonly property int controlSize: Style.space(28)
 
   Item {
     anchors.fill: parent
-    anchors.leftMargin: root.borderLeft + Style.spacing.md
-    anchors.rightMargin: root.borderRight + Style.spacing.md
+    anchors.leftMargin: root.borderLeft + root.pad
+    anchors.rightMargin: root.borderRight + root.pad
     anchors.topMargin: root.borderTop + Style.spacing.md
     anchors.bottomMargin: root.borderBottom + Style.spacing.md
 
@@ -45,11 +49,15 @@ TileSurface {
       clip: true
 
       Image {
+        id: art
         anchors.fill: parent
-        source: root.localArt ? root.artUrl : ""
+        source: root.artSource
         visible: status === Image.Ready
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
+        // Decoded to the size it is drawn at, so a player pointing at a
+        // print-resolution image costs a thumbnail rather than a bitmap the
+        // size of the screen.
         sourceSize.width: root.artSize * 2
         sourceSize.height: root.artSize * 2
         cache: false
@@ -58,7 +66,7 @@ TileSurface {
       Text {
         textFormat: Text.PlainText
         anchors.centerIn: parent
-        visible: !root.localArt
+        visible: art.status !== Image.Ready
         text: "󰝚"
         color: root.dim
         font.family: root.fontFamily
@@ -68,7 +76,7 @@ TileSurface {
 
     Column {
       anchors.left: artFrame.right
-      anchors.leftMargin: Style.spacing.xl
+      anchors.leftMargin: root.pad
       anchors.right: controls.left
       anchors.rightMargin: Style.spacing.md
       anchors.verticalCenter: parent.verticalCenter
@@ -108,6 +116,8 @@ TileSurface {
         tooltipText: "Previous"
         enabled: root.canGoPrevious
         hasCursor: root.subCursor === 0
+        size: root.controlSize
+        fontSize: Style.font.icon
         foreground: root.foreground
         fontFamily: root.fontFamily
         onClicked: root.transport("previous")
@@ -118,9 +128,11 @@ TileSurface {
         iconText: root.playing ? "󰏤" : "󰐊"
         tooltipText: root.playing ? "Pause" : "Play"
         hasCursor: root.subCursor === 1
-        foreground: root.foreground
+        size: root.controlSize
+        fontSize: Style.font.icon
+        // The one control whose state is worth seeing from across the card.
+        foreground: root.playing ? root.stateColor : root.foreground
         fontFamily: root.fontFamily
-        fontSize: Style.font.iconLarge
         onClicked: root.transport("playPause")
         onHovered: function(h) { if (h) root.controlHovered(1) }
       }
@@ -130,6 +142,8 @@ TileSurface {
         tooltipText: "Next"
         enabled: root.canGoNext
         hasCursor: root.subCursor === 2
+        size: root.controlSize
+        fontSize: Style.font.icon
         foreground: root.foreground
         fontFamily: root.fontFamily
         onClicked: root.transport("next")

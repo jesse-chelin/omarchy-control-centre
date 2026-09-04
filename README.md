@@ -147,9 +147,23 @@ State lives in `~/.local/state/omarchy/control-centre.json`, written with mode
 The card runs inside a process that lives as long as your session, so the
 places where something outside it gets a say are deliberately narrow.
 
-**No network, no credentials, no privilege.** The plugin makes no network
-requests, holds no tokens, and installs nothing.
-No sudo or pkexec is required, and neither is ever invoked.
+**No credentials, no privilege.** The plugin holds no tokens and installs
+nothing. No sudo or pkexec is required, and neither is ever invoked.
+
+**One thing is fetched, and only what your media player asks for.** The Media
+control renders the album art at the URL the playing application publishes
+over MPRIS, which is the same URL Omarchy's own media bar widget loads. That
+is the only request this plugin makes, and it makes none of its own choosing:
+there is no telemetry, no update check, and nothing is sent anywhere.
+
+The URL comes from whatever is playing, so it is not treated as trusted. It is
+accepted only as `file:`, `data:` limited to an image type, `http:` or
+`https:`; refused if it carries credentials, whitespace or control characters,
+or runs past 2048 characters; and decoded to the size it is drawn at, so a
+player pointing at a print-resolution image costs a thumbnail rather than a
+bitmap the size of the screen. A URL that is refused, or an image that fails
+to load, shows the note placeholder. Hide the Media control and nothing is
+fetched at all.
 
 **Names the card did not choose.** Wi-Fi SSIDs, Bluetooth device names, media
 metadata, PipeWire descriptions and Hyprland binding descriptions are all

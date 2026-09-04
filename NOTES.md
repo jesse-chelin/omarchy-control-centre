@@ -529,6 +529,25 @@ plugin cannot set a format on. The only strings handed to `Button`,
 allowlist, and theme directory names already matched against
 `^[a-z0-9][a-z0-9-]{0,63}$`.
 
+## Album art is the one thing fetched
+
+The tile used to accept `file://` only, on the grounds that the plugin touches
+no network. The result was a control that never showed art: real players
+publish an address on the machine or on the network that serves the library.
+Roon on this machine hands out `http://<lan-host>:9330/api/image/...`, and
+Omarchy's own media bar widget loads exactly that URL with no scheme check at
+all.
+
+So the tile loads it too, through `Model.artSource`, which is where the
+refusals live and where the tests point: four schemes, `data:` only for an
+image type, no credentials in the authority, no whitespace or control
+characters, and a length cap. `sourceSize` is pinned to twice the drawn size
+so the decode cost is a thumbnail whatever the player points at, and a refusal
+or a failed load falls back to the note glyph rather than an empty box.
+
+This is a real change to what the plugin does, and the README says so where a
+reviewer reads rather than leaving a "no network" line that is no longer true.
+
 ## Motion
 
 The card's resting position is derived from its own width and height: it is
